@@ -1,0 +1,61 @@
+{
+  "identifier" : "B74D1F84-8E73-4D0F-921E-7EBF5E1158B8",
+  "nonRenewingSubscriptions" : [],
+  "products" : [],
+  "settings" : {
+    "_applicationInternalID" : "",
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : []
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "CF944B1B-4686-4A5D-A832-3BF4083A9BA0",
+      "localizations" : [
+        { "description" : "Look Far Plus", "displayName" : "Look Far Plus", "locale" : "en_US" }
+      ],
+      "name" : "Look Far Plus",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "39.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "B2EE8914-9D57-4F3F-8E48-547652937BF5",
+          "introductoryOffer" : null,
+          "localizations" : [
+            { "description" : "A year of Look Far Plus. Renews yearly.", "displayName" : "Look Far Plus Yearly", "locale" : "en_US" }
+          ],
+          "productID" : "dev.lookfar.plus.annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Look Far Plus Yearly",
+          "subscriptionGroupID" : "CF944B1B-4686-4A5D-A832-3BF4083A9BA0",
+          "type" : "RecurringSubscription",
+          "winBackOffers" : []
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "7.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "FD11D7A8-E9BF-4A5E-A890-4B9A745A81DC",
+          "introductoryOffer" : null,
+          "localizations" : [
+            { "description" : "A month of Look Far Plus. Renews monthly.", "displayName" : "Look Far Plus Monthly", "locale" : "en_US" }
+          ],
+          "productID" : "dev.lookfar.plus.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Look Far Plus Monthly",
+          "subscriptionGroupID" : "CF944B1B-4686-4A5D-A832-3BF4083A9BA0",
+          "type" : "RecurringSubscription",
+          "winBackOffers" : []
+        }
+      ]
+    }
+  ],
+  "version" : { "major" : 3, "minor" : 0 }
+}

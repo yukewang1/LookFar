@@ -1,0 +1,11 @@
+// Public SDK key from RevenueCat Project Settings > API keys.
+// Use a test_ key for Debug Test Store sessions, or an appl_ key for the App Store.
+// Public Test Store key for the Look Far project. Never put a secret sk_ key here.
+// Release builds reject test_ keys; set the iOS public key before archiving.
+REVENUECAT_PUBLIC_SDK_KEY = test_uNeoYJGCCidMLiiSOnFtSMuGwWy
+
+// RevenueCat entitlement that unlocks Look Far Plus.
+REVENUECAT_ENTITLEMENT_ID = plus
+
+// Leave empty to use the project's current offering.
+REVENUECAT_OFFERING_ID =
