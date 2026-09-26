@@ -14,6 +14,15 @@ struct ShieldSkipEvent: Codable, Identifiable, Equatable {
     }
 }
 
+struct UsageCheckpointState: Codable {
+    let activityName: String
+    var tracker: UsageGapTracker
+
+    func tracker(for activityName: String) -> UsageGapTracker {
+        self.activityName == activityName ? tracker : UsageGapTracker()
+    }
+}
+
 struct MonitoringConfig: Codable {
     var selection = FamilyActivitySelection()
     var useMinutes = 20
@@ -44,6 +53,28 @@ struct MonitoringConfig: Codable {
         breakDeadline = try container.decodeIfPresent(Date.self, forKey: .breakDeadline)
         activityName = try container.decodeIfPresent(String.self, forKey: .activityName)
     }
+
+    enum CheckpointAction {
+        case ignore, save, restart, shield
+    }
+
+    mutating func recordUsageCheckpoint(minutes: Int, at date: Date, tracker: inout UsageGapTracker) -> CheckpointAction {
+        guard enabled, minutes > 0, minutes <= useMinutes else { return .ignore }
+        if let breakDeadline { return breakDeadline <= date ? .restart : .ignore }
+        guard !pendingBreak else { return .ignore }
+        switch tracker.record(usageMinutes: minutes, at: date) {
+        case .ignored:
+            return .ignore
+        case .reset:
+            return .restart
+        case .continued:
+            if minutes == useMinutes {
+                pendingBreak = true
+                return .shield
+            }
+            return .save
+        }
+    }
 }
 
 enum ScreenTimeFailure: LocalizedError {
@@ -71,7 +102,9 @@ enum ScreenTimeSupport {
     static let appGroup = "group.dev.local.lookfar"
     static let activityPrefix = "lookfar.cycle."
     static let thresholdEvent = DeviceActivityEvent.Name("lookfar.break-due")
+    private static let checkpointPrefix = "lookfar.usage-minute."
     private static let configKey = "lookfar.monitoring-config"
+    private static let checkpointKey = "lookfar.usage-checkpoint"
     private static let errorKey = "lookfar.monitoring-error"
     private static let skipsPrefix = "lookfar.shield-skip."
     private static let logger = Logger(subsystem: "dev.local.lookfar", category: "ScreenTime")
@@ -121,6 +154,18 @@ enum ScreenTimeSupport {
         try defaults().set(data, forKey: configKey)
     }
 
+    static func loadUsageGapTracker(for activity: DeviceActivityName) throws -> UsageGapTracker {
+        guard let data = try defaults().data(forKey: checkpointKey) else { return UsageGapTracker() }
+        let state = try JSONDecoder().decode(UsageCheckpointState.self, from: data)
+        return state.tracker(for: activity.rawValue)
+    }
+
+    static func saveUsageGapTracker(_ tracker: UsageGapTracker, for activity: DeviceActivityName) throws {
+        // Frequent checkpoints must not overwrite preferences or a concurrently started rest.
+        let state = UsageCheckpointState(activityName: activity.rawValue, tracker: tracker)
+        try defaults().set(JSONEncoder().encode(state), forKey: checkpointKey)
+    }
+
     static func lastError() throws -> String? { try defaults().string(forKey: errorKey) }
 
     static func recordFailure(_ error: Error) {
@@ -153,18 +198,53 @@ enum ScreenTimeSupport {
         try save(config)
     }
 
-    static func upgradeScheduleIfNeeded() throws {
+    static func upgradeMonitoringIfNeeded() throws {
         guard isAvailable else { return }
         let config = try load()
         guard config.enabled else { return }
-        let schedule = config.activityName.flatMap { DeviceActivityCenter().schedule(for: .init($0)) }
-        guard schedule != allDaySchedule else { return }
+        let center = DeviceActivityCenter()
+        let activity = config.activityName.map { DeviceActivityName($0) }
+        let schedule = activity.flatMap { center.schedule(for: $0) }
+        let events = activity.map { center.events(for: $0) }
+        guard schedule != allDaySchedule || events != monitoringEvents(for: config) else { return }
         try rearm(preservingPendingBreak: true)
     }
 
-    static func rearm(useMinutes: Int? = nil, preservingPendingBreak: Bool = false) throws {
-        if !preservingPendingBreak { clearShield() }
+    static func monitoringEvents(for config: MonitoringConfig) -> [DeviceActivityEvent.Name: DeviceActivityEvent] {
+        guard config.useMinutes > 0 else { return [:] }
+        return Dictionary(uniqueKeysWithValues: (1...config.useMinutes).map { minute in
+            let name = minute == config.useMinutes ? thresholdEvent : DeviceActivityEvent.Name(checkpointPrefix + String(minute))
+            // Every checkpoint measures the same eligible activity from the start of this cycle.
+            let event = DeviceActivityEvent(
+                applications: config.selection.applicationTokens,
+                categories: config.selection.categoryTokens,
+                webDomains: config.selection.webDomainTokens,
+                threshold: DateComponents(minute: minute),
+                includesPastActivity: false
+            )
+            return (name, event)
+        })
+    }
+
+    static func usageMinutes(for event: DeviceActivityEvent.Name, limit: Int) -> Int? {
+        if event == thresholdEvent { return limit > 0 ? limit : nil }
+        guard event.rawValue.hasPrefix(checkpointPrefix),
+              let minute = Int(event.rawValue.dropFirst(checkpointPrefix.count)),
+              minute > 0, minute < limit else { return nil }
+        return minute
+    }
+
+    static func rearm(useMinutes: Int? = nil, preservingPendingBreak: Bool = false, afterCheckpointIn activity: DeviceActivityName? = nil) throws {
         var config = try load()
+        if let activity {
+            guard config.enabled, config.activityName == activity.rawValue else { return }
+            if let deadline = config.breakDeadline {
+                guard deadline <= .now else { return }
+            } else if config.pendingBreak {
+                return
+            }
+        }
+        if !preservingPendingBreak { clearShield() }
         if let useMinutes { config.useMinutes = useMinutes }
         if !preservingPendingBreak {
             config.pendingBreak = false
@@ -183,15 +263,7 @@ enum ScreenTimeSupport {
             config.activityName = name.rawValue
             // Persist the generation before registration: callbacks can arrive immediately.
             try save(config)
-            // Apple's empty token sets count all activity; selecting tokens narrows the scope.
-            let event = DeviceActivityEvent(
-                applications: config.selection.applicationTokens,
-                categories: config.selection.categoryTokens,
-                webDomains: config.selection.webDomainTokens,
-                threshold: DateComponents(minute: config.useMinutes),
-                includesPastActivity: false
-            )
-            try DeviceActivityCenter().startMonitoring(name, during: allDaySchedule, events: [thresholdEvent: event])
+            try DeviceActivityCenter().startMonitoring(name, during: allDaySchedule, events: monitoringEvents(for: config))
             try clearError()
         } catch {
             clearShield()

@@ -49,7 +49,7 @@ struct SettingsView: View {
                     if let error = store.monitoring.errorMessage { Text(error).font(.footnote).foregroundStyle(.orange) }
                     Button("Release apps & stop monitoring") { store.monitoring.release() }
                 } header: { Text("Automatic pauses") } footer: {
-                    Text("App use adds up throughout the day and night. The Today total always includes all eligible apps on this iPhone.")
+                    Text("We estimate gaps in monitored app use and restart after about 5 minutes away. Using unselected apps can count as a gap. Today’s total still includes all eligible apps.")
                 }
 
                 Section {

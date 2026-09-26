@@ -259,7 +259,7 @@ final class ScreenTimeManager {
                 try ScreenTimeSupport.stop()
                 config = try ScreenTimeSupport.load()
             }
-            try ScreenTimeSupport.upgradeScheduleIfNeeded()
+            try ScreenTimeSupport.upgradeMonitoringIfNeeded()
             config = try ScreenTimeSupport.load()
             if let deadline = config.breakDeadline, deadline <= .now {
                 try ScreenTimeSupport.rearm()

@@ -91,10 +91,11 @@ for name, identifier in target_ids.items():
     elif test:
         sources = [ref for path, ref in refs.items() if path.startswith("UITests/")]
         sources.append(refs["Shared/ScreenTimeSupport.swift"])
+        sources.append(refs["Core/UsageGapTracker.swift"])
     elif report:
         sources = [refs[path] for path in ("Extensions/ScreenTimeReport.swift", "Shared/ScreenTimeReportContent.swift", "App/Theme.swift")]
     else:
-        sources = [refs["Shared/ScreenTimeSupport.swift"], refs["Extensions/" + name + ".swift"]]
+        sources = [refs["Shared/ScreenTimeSupport.swift"], refs["Core/UsageGapTracker.swift"], refs["Extensions/" + name + ".swift"]]
     source_phase = add(name + "sources", "PBXSourcesBuildPhase", buildActionMask=2147483647,
                        files=[buildfile(name, ref) for ref in sources], runOnlyForDeploymentPostprocessing=0)
     resources = [assets, privacy] if main else [] if test else [privacy]
