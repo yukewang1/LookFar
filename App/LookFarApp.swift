@@ -3,37 +3,38 @@ import SwiftUI
 @main
 struct LookFarApp: App {
     @State private var store = AppStore()
-    @State private var subscriptions = SubscriptionManager()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
-            RootView(store: store, subscriptions: subscriptions)
+            RootView(store: store)
                 .preferredColorScheme(.dark)
                 .tint(AppTheme.sage)
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
                         store.reconcile()
-                        Task { await subscriptions.refreshEntitlements() }
                     }
                 }
-                .task { await subscriptions.refreshEntitlements() }
         }
     }
 }
 
 struct RootView: View {
     @Bindable var store: AppStore
-    let subscriptions: SubscriptionManager
     @State private var tab = 0
     @State private var showSettings = false
 
     var body: some View {
         Group {
-            if store.state.onboardingComplete {
+            if store.state.onboardingComplete && store.monitoring.isResolvingAuthorization {
+                SwiftUI.ProgressView("Checking Screen Time…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if store.state.onboardingComplete && !store.monitoring.isAuthorized {
+                ScreenTimeAccessView(store: store, onConnected: {})
+            } else if store.state.onboardingComplete {
                 TabView(selection: $tab) {
                     TodayView(store: store, openSettings: { showSettings = true }, openProgress: { tab = 1 })
-                        .tabItem { Label("Today", systemImage: "house.fill") }.tag(0)
+                        .tabItem { Label("Today", systemImage: "tree.fill") }.tag(0)
                     ProgressView(store: store)
                         .tabItem { Label("Progress", systemImage: "chart.bar.fill") }.tag(1)
                     LearnView()
@@ -42,7 +43,7 @@ struct RootView: View {
                 .toolbarBackground(AppTheme.background, for: .tabBar)
                 .toolbarBackground(.visible, for: .tabBar)
                 .sheet(isPresented: $showSettings) {
-                    SettingsView(store: store, subscriptions: subscriptions)
+                    SettingsView(store: store)
                 }
             } else {
                 OnboardingView(store: store)
@@ -50,7 +51,13 @@ struct RootView: View {
         }
         .background(AppTheme.background)
         .foregroundStyle(AppTheme.cream)
-        .fullScreenCover(isPresented: $store.isBreakPresented) { BreakView(store: store) }
+        .task { await store.resolveScreenTimeAuthorization() }
+        .onChange(of: store.monitoring.isAuthorized) { _, authorized in
+            if !authorized { showSettings = false }
+        }
+        .fullScreenCover(isPresented: $store.isBreakPresented, onDismiss: { store.breakCompleted = false }) {
+            BreakView(store: store)
+        }
         .sheet(isPresented: $store.showPause) { PauseView(store: store) }
         .alert("Something needs attention", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("OK") { store.errorMessage = nil }

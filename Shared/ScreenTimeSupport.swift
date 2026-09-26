@@ -17,37 +17,46 @@ struct ShieldSkipEvent: Codable, Identifiable, Equatable {
 struct MonitoringConfig: Codable {
     var selection = FamilyActivitySelection()
     var useMinutes = 20
+    var restSeconds = 20
     var enabled = false
-    var startHour = 8
-    var endHour = 22
     var pendingBreak = false
     var breakDeadline: Date?
     var activityName: String?
 
-    var hasSelection: Bool {
-        !selection.applicationTokens.isEmpty || !selection.categoryTokens.isEmpty
-            || !selection.webDomainTokens.isEmpty
+    var monitorsAllApps: Bool {
+        selection.applicationTokens.isEmpty && selection.categoryTokens.isEmpty
+            && selection.webDomainTokens.isEmpty
     }
 
-    func isWithinActiveHours(at date: Date = .now) -> Bool {
-        let hour = Calendar.current.component(.hour, from: date)
-        return hour >= startHour && hour < endHour
+    private enum CodingKeys: String, CodingKey {
+        case selection, useMinutes, restSeconds, enabled, pendingBreak, breakDeadline, activityName
+    }
+
+    init() {}
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        selection = try container.decode(FamilyActivitySelection.self, forKey: .selection)
+        useMinutes = try container.decode(Int.self, forKey: .useMinutes)
+        restSeconds = try container.decodeIfPresent(Int.self, forKey: .restSeconds) ?? 20
+        enabled = try container.decode(Bool.self, forKey: .enabled)
+        pendingBreak = try container.decode(Bool.self, forKey: .pendingBreak)
+        breakDeadline = try container.decodeIfPresent(Date.self, forKey: .breakDeadline)
+        activityName = try container.decodeIfPresent(String.self, forKey: .activityName)
     }
 }
 
 enum ScreenTimeFailure: LocalizedError {
-    case simulator, notAuthorized, noSelection, invalidSchedule, invalidInterval, sharedStorageUnavailable, invalidSkipEvent
+    case simulator, notAuthorized, invalidRhythm, invalidInterval, sharedStorageUnavailable, invalidSkipEvent
 
     var errorDescription: String? {
         switch self {
         case .simulator:
-            return "Screen Time monitoring needs a physical iPhone. Rest timers and progress work in Simulator."
+            return "Screen Time access requires a physical iPhone."
         case .notAuthorized:
             return "Allow Screen Time access before enabling automatic breaks."
-        case .noSelection:
-            return "Choose at least one app, category, or website before enabling automatic breaks."
-        case .invalidSchedule:
-            return "Choose a start hour before the end hour, within the same day."
+        case .invalidRhythm:
+            return "Choose 5–120 minutes of screen use and 5–120 seconds of rest."
         case .invalidInterval:
             return "The usage interval must be at least one minute."
         case .sharedStorageUnavailable:
@@ -66,6 +75,15 @@ enum ScreenTimeSupport {
     private static let errorKey = "lookfar.monitoring-error"
     private static let skipsPrefix = "lookfar.shield-skip."
     private static let logger = Logger(subsystem: "dev.local.lookfar", category: "ScreenTime")
+
+    // Apple's daily schedule runs midnight to midnight: developer.apple.com/videos/play/wwdc2021/10123/.
+    static var allDaySchedule: DeviceActivitySchedule {
+        DeviceActivitySchedule(
+            intervalStart: DateComponents(hour: 0, minute: 0),
+            intervalEnd: DateComponents(hour: 0, minute: 0),
+            repeats: true
+        )
+    }
 
     static var isAvailable: Bool {
         #if targetEnvironment(simulator)
@@ -135,12 +153,23 @@ enum ScreenTimeSupport {
         try save(config)
     }
 
-    static func rearm(useMinutes: Int? = nil) throws {
-        clearShield()
+    static func upgradeScheduleIfNeeded() throws {
+        guard isAvailable else { return }
+        let config = try load()
+        guard config.enabled else { return }
+        let schedule = config.activityName.flatMap { DeviceActivityCenter().schedule(for: .init($0)) }
+        guard schedule != allDaySchedule else { return }
+        try rearm(preservingPendingBreak: true)
+    }
+
+    static func rearm(useMinutes: Int? = nil, preservingPendingBreak: Bool = false) throws {
+        if !preservingPendingBreak { clearShield() }
         var config = try load()
         if let useMinutes { config.useMinutes = useMinutes }
-        config.pendingBreak = false
-        config.breakDeadline = nil
+        if !preservingPendingBreak {
+            config.pendingBreak = false
+            config.breakDeadline = nil
+        }
         config.activityName = nil
         try save(config)
         stopActivities()
@@ -149,20 +178,12 @@ enum ScreenTimeSupport {
         do {
             guard isAvailable else { throw ScreenTimeFailure.simulator }
             guard isAuthorized else { throw ScreenTimeFailure.notAuthorized }
-            guard config.hasSelection else { throw ScreenTimeFailure.noSelection }
             guard config.useMinutes > 0 else { throw ScreenTimeFailure.invalidInterval }
-            guard (0...23).contains(config.startHour), (1...24).contains(config.endHour),
-                  config.startHour < config.endHour else { throw ScreenTimeFailure.invalidSchedule }
-
             let name = DeviceActivityName(activityPrefix + UUID().uuidString)
             config.activityName = name.rawValue
             // Persist the generation before registration: callbacks can arrive immediately.
             try save(config)
-            let schedule = DeviceActivitySchedule(
-                intervalStart: DateComponents(hour: config.startHour),
-                intervalEnd: DateComponents(hour: config.endHour),
-                repeats: true
-            )
+            // Apple's empty token sets count all activity; selecting tokens narrows the scope.
             let event = DeviceActivityEvent(
                 applications: config.selection.applicationTokens,
                 categories: config.selection.categoryTokens,
@@ -170,10 +191,13 @@ enum ScreenTimeSupport {
                 threshold: DateComponents(minute: config.useMinutes),
                 includesPastActivity: false
             )
-            try DeviceActivityCenter().startMonitoring(name, during: schedule, events: [thresholdEvent: event])
+            try DeviceActivityCenter().startMonitoring(name, during: allDaySchedule, events: [thresholdEvent: event])
             try clearError()
         } catch {
+            clearShield()
             config.enabled = false
+            config.pendingBreak = false
+            config.breakDeadline = nil
             config.activityName = nil
             try save(config)
             stopActivities()
@@ -184,6 +208,13 @@ enum ScreenTimeSupport {
 
     static func applyShield(for config: MonitoringConfig) {
         let store = ManagedSettingsStore(named: .init("lookfar.break"))
+        if config.monitorsAllApps {
+            store.shield.applications = nil
+            store.shield.applicationCategories = .all()
+            store.shield.webDomains = nil
+            store.shield.webDomainCategories = .all()
+            return
+        }
         store.shield.applications = config.selection.applicationTokens.isEmpty ? nil : config.selection.applicationTokens
         store.shield.applicationCategories = config.selection.categoryTokens.isEmpty ? nil : .specific(config.selection.categoryTokens)
         store.shield.webDomains = config.selection.webDomainTokens.isEmpty ? nil : config.selection.webDomainTokens

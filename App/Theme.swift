@@ -53,18 +53,3 @@ struct LandscapeView: View {
         .frame(height: height).accessibilityHidden(true)
     }
 }
-
-struct QuietRow: View {
-    let symbol: String
-    let title: String
-    let detail: String
-    var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            Image(systemName: symbol).font(.title3).foregroundStyle(AppTheme.sage).frame(width: 25)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.headline).foregroundStyle(AppTheme.cream)
-                Text(detail).font(.subheadline).foregroundStyle(AppTheme.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-        }.padding(.vertical, 12)
-    }
-}

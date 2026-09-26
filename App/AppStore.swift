@@ -33,7 +33,12 @@ final class AppStore {
         soundEnabled = UserDefaults.standard.object(forKey: "soundEnabled") as? Bool ?? true
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--skip-onboarding") { state.onboardingComplete = true }
+        if isUITesting && arguments.contains("--ui-testing-restored-rest") {
+            RestLogic.start(&state, at: .now)
+        }
         isBreakPresented = state.activeSession != nil
+            && (!state.onboardingComplete || !monitoring.isResolvingAuthorization)
+        monitoring.onAuthorizationLost = { [weak self] in self?.interruptForScreenTimeDisconnect() }
         reconcile()
     }
 
@@ -46,17 +51,20 @@ final class AppStore {
         persist()
     }
 
-    func setRoutine(_ routine: RestRoutine) {
-        state.routine = routine
+    func restartOnboarding() {
+        state.onboardingComplete = false
         persist()
-        resetMonitoring()
     }
 
-    func startBreak() {
+    func startBreak(isOnboardingTrial: Bool = false) {
+        monitoring.refreshAuthorization()
+        guard !state.onboardingComplete || (!monitoring.isResolvingAuthorization && monitoring.isAuthorized) else { return }
         feedbackMessage = nil
         breakCompleted = false
         showPause = false
-        RestLogic.start(&state, at: Date(), durationOverride: isUITesting ? 2 : nil)
+        let useShortTimer = isUITesting && !ProcessInfo.processInfo.arguments.contains("--ui-testing-full-rest")
+        let duration = isOnboardingTrial ? RestSchedule.onboardingRestSeconds : monitoring.restSeconds
+        RestLogic.start(&state, at: Date(), durationOverride: useShortTimer ? 2 : duration)
         persist()
         isBreakPresented = true
         if monitoring.isEnabled, let session = state.activeSession {
@@ -68,6 +76,10 @@ final class AppStore {
 
     func reconcile() {
         monitoring.refresh()
+        if state.onboardingComplete && monitoring.isResolvingAuthorization { return }
+        if state.onboardingComplete && !monitoring.isAuthorized {
+            interruptForScreenTimeDisconnect()
+        }
         let skips: [ShieldSkipEvent]
         do { skips = try monitoring.pendingSkippedBreaks() }
         catch {
@@ -99,7 +111,32 @@ final class AppStore {
         }
     }
 
+    func resolveScreenTimeAuthorization() async {
+        guard state.onboardingComplete, monitoring.isResolvingAuthorization else { return }
+        await monitoring.resolveExistingAuthorization()
+        if monitoring.isAuthorized { isBreakPresented = state.activeSession != nil }
+        reconcile()
+    }
+
+    private func interruptForScreenTimeDisconnect() {
+        let hadSession = state.activeSession != nil
+        state.activeSession = nil
+        isBreakPresented = false
+        breakCompleted = false
+        showPause = false
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["rest-end"])
+        if hadSession { persist() }
+    }
+
     func tick() {
+        if state.onboardingComplete {
+            monitoring.refreshAuthorization()
+            guard !monitoring.isResolvingAuthorization else { return }
+            guard monitoring.isAuthorized else {
+                interruptForScreenTimeDisconnect()
+                return
+            }
+        }
         guard RestLogic.completeIfDue(&state, at: Date()) else { return }
         persist()
         breakCompleted = true
@@ -135,7 +172,6 @@ final class AppStore {
 
     func dismissCompletedBreak() {
         isBreakPresented = false
-        breakCompleted = false
     }
 
     func requestNotifications() async {
@@ -156,7 +192,7 @@ final class AppStore {
 
     private func resetMonitoring() {
         guard monitoring.isEnabled else { return }
-        do { try monitoring.resetCycle(usageMinutes: state.routine.usageMinutes) }
+        do { try monitoring.resetCycle(usageMinutes: monitoring.usageMinutes) }
         catch {
             monitoring.release()
             errorMessage = "Monitoring paused and apps released because a new cycle could not start. \(error.localizedDescription)"

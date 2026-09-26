@@ -9,7 +9,7 @@ struct LearnView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("A LITTLE PERSPECTIVE").font(.caption.weight(.semibold)).tracking(2).foregroundStyle(AppTheme.sage)
                     Text("Care for the way\nyou see.").font(AppTheme.title(37))
-                    Text("For close-up days, tired eyes, and life with myopia.")
+                    Text("Simple ways to make your screen days feel better.")
                         .font(.subheadline).foregroundStyle(AppTheme.secondary)
                 }
                 ritualCard
@@ -26,7 +26,7 @@ struct LearnView: View {
                     Text("Make it comfortable.").font(AppTheme.title(26))
                     tip("Look beyond the screen", detail: "Choose something far away. Around 6 metres / 20 feet is a useful guide.", symbol: "mountain.2")
                     tip("Blink gently and fully", detail: "Let your eyes close completely. No squeezing or eye exercises needed.", symbol: "eye.closed")
-                    tip("Find your own rhythm", detail: "The classic rule is a starting point. Pick a routine you can keep, and pause when you need to.", symbol: "water.waves")
+                    tip("Make room for small pauses", detail: "Let regular screen breaks become part of your day, and take an extra pause whenever you need one.", symbol: "water.waves")
                 }
                 careAdvice
                 sources

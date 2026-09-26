@@ -23,7 +23,7 @@ final class LookFarShieldAction: ShieldActionDelegate {
             }
 
             let config = try ScreenTimeSupport.load()
-            if !config.enabled || !config.isWithinActiveHours() || !ScreenTimeSupport.isAuthorized {
+            if !config.enabled || !ScreenTimeSupport.isAuthorized {
                 try ScreenTimeSupport.clearPendingBreak()
                 completionHandler(.none)
             } else if let deadline = config.breakDeadline, deadline <= .now {

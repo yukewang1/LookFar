@@ -42,9 +42,9 @@ revenuecat_product = add(
     package=revenuecat_package, productName="RevenueCat",
 )
 extra = [file(str(p.relative_to(ROOT)), "text.plist.xml") for p in sorted((ROOT / "Config").glob("*.plist"))]
-extra += [file("Config/ScreenTime.entitlements", "text.plist.entitlements")]
+extra += [file(str(p.relative_to(ROOT)), "text.plist.entitlements") for p in sorted((ROOT / "Config").glob("*.entitlements"))]
 products = {}
-target_ids = {name: uid("target:" + name) for name in ("LookFar", "ActivityMonitor", "ShieldConfiguration", "ShieldAction", "LookFarUITests")}
+target_ids = {name: uid("target:" + name) for name in ("LookFar", "ActivityMonitor", "ShieldConfiguration", "ShieldAction", "ScreenTimeReport", "LookFarUITests")}
 
 base = {
     "CLANG_ENABLE_MODULES": "YES", "SDKROOT": "iphoneos", "IPHONEOS_DEPLOYMENT_TARGET": "26.5",
@@ -80,6 +80,7 @@ def dependency(name, target):
 for name, identifier in target_ids.items():
     main = name == "LookFar"
     test = name == "LookFarUITests"
+    report = name == "ScreenTimeReport"
     extension = not main and not test
     suffix = ".app" if main else ".xctest" if test else ".appex"
     product = add(name + "product", "PBXFileReference", explicitFileType="wrapper.application" if main else "wrapper.cfbundle",
@@ -89,6 +90,9 @@ for name, identifier in target_ids.items():
         sources = [ref for path, ref in refs.items() if path.startswith(("App/", "Core/", "Shared/"))]
     elif test:
         sources = [ref for path, ref in refs.items() if path.startswith("UITests/")]
+        sources.append(refs["Shared/ScreenTimeSupport.swift"])
+    elif report:
+        sources = [refs[path] for path in ("Extensions/ScreenTimeReport.swift", "Shared/ScreenTimeReportContent.swift", "App/Theme.swift")]
     else:
         sources = [refs["Shared/ScreenTimeSupport.swift"], refs["Extensions/" + name + ".swift"]]
     source_phase = add(name + "sources", "PBXSourcesBuildPhase", buildActionMask=2147483647,
@@ -110,13 +114,15 @@ for name, identifier in target_ids.items():
         settings.update({"CODE_SIGN_ENTITLEMENTS": "Config/ScreenTime.entitlements", "APPLICATION_EXTENSION_API_ONLY": "YES", "SKIP_INSTALL": "YES",
                          "INFOPLIST_FILE": "Config/" + name + "-Info.plist",
                          "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks"]})
+        if report:
+            settings["CODE_SIGN_ENTITLEMENTS"] = "Config/ScreenTimeReport.entitlements"
     else:
         settings["TEST_TARGET_NAME"] = "LookFar"
     deps = [dependency(name + "toapp", "LookFar")] if test else []
     objects[identifier] = {"isa": "PBXNativeTarget", "buildConfigurationList": configlist(name, settings, revenuecat_config if main else None),
                            "buildPhases": [source_phase, framework_phase, resource_phase], "buildRules": [], "dependencies": deps,
                            "name": name, "productName": name, "productReference": product,
-                           "productType": "com.apple.product-type.application" if main else "com.apple.product-type.bundle.ui-testing" if test else "com.apple.product-type.app-extension"}
+                           "productType": "com.apple.product-type.application" if main else "com.apple.product-type.bundle.ui-testing" if test else "com.apple.product-type.extensionkit-extension" if report else "com.apple.product-type.app-extension"}
     if main:
         objects[identifier]["packageProductDependencies"] = [revenuecat_product]
 
@@ -125,7 +131,12 @@ embed = add("embed", "PBXCopyFilesBuildPhase", buildActionMask=2147483647, dstPa
             files=[buildfile("embed", products[n], settings={"ATTRIBUTES": ["RemoveHeadersOnCopy"]}) for n in extensions],
             name="Embed App Extensions", runOnlyForDeploymentPostprocessing=0)
 objects[target_ids["LookFar"]]["buildPhases"].append(embed)
-objects[target_ids["LookFar"]]["dependencies"] = [dependency("app" + n, n) for n in extensions]
+embed_report = add("embed-report", "PBXCopyFilesBuildPhase", buildActionMask=2147483647,
+                   dstPath="$(CONTENTS_FOLDER_PATH)/Extensions", dstSubfolderSpec=16,
+                   files=[buildfile("embed", products["ScreenTimeReport"], settings={"ATTRIBUTES": ["RemoveHeadersOnCopy"]})],
+                   name="Embed Screen Time Report", runOnlyForDeploymentPostprocessing=0)
+objects[target_ids["LookFar"]]["buildPhases"].append(embed_report)
+objects[target_ids["LookFar"]]["dependencies"] = [dependency("app" + n, n) for n in extensions + ["ScreenTimeReport"]]
 product_group = add("products", "PBXGroup", children=list(products.values()), name="Products", sourceTree="<group>")
 source_group = add("sources", "PBXGroup", children=list(refs.values()) + [assets], name="Sources", sourceTree="<group>")
 config_group = add("config", "PBXGroup", children=[storekit, privacy, revenuecat_config] + extra, name="Configuration", sourceTree="<group>")

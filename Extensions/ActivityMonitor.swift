@@ -7,7 +7,7 @@ final class ActivityMonitor: DeviceActivityMonitor {
         do {
             var config = try ScreenTimeSupport.load()
             guard config.enabled, config.activityName == activity.rawValue else { return }
-            guard config.isWithinActiveHours(), ScreenTimeSupport.isAuthorized else {
+            guard ScreenTimeSupport.isAuthorized else {
                 try ScreenTimeSupport.clearPendingBreak()
                 return
             }
@@ -23,18 +23,22 @@ final class ActivityMonitor: DeviceActivityMonitor {
     }
 
     override func intervalDidStart(for activity: DeviceActivityName) {
-        clearBreak(for: activity)
+        reconcileBreak(for: activity)
     }
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
-        clearBreak(for: activity)
+        reconcileBreak(for: activity)
     }
 
-    private func clearBreak(for activity: DeviceActivityName) {
+    private func reconcileBreak(for activity: DeviceActivityName) {
         do {
             let config = try ScreenTimeSupport.load()
             guard config.activityName == activity.rawValue else { return }
-            try ScreenTimeSupport.clearPendingBreak()
+            if !config.enabled || !ScreenTimeSupport.isAuthorized {
+                try ScreenTimeSupport.clearPendingBreak()
+            } else if let deadline = config.breakDeadline, deadline <= .now {
+                try ScreenTimeSupport.rearm()
+            }
         } catch {
             ScreenTimeSupport.clearShield()
             ScreenTimeSupport.recordFailure(error)

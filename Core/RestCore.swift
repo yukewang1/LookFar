@@ -1,22 +1,9 @@
 import Foundation
 
-public enum RestRoutine: String, Codable, CaseIterable, Identifiable {
-    case classic
-    case frequent
-    case extended
-
-    public var id: String { rawValue }
-
-    public var title: String {
-        switch self {
-        case .classic: "Classic"
-        case .frequent: "Frequent"
-        case .extended: "Longer"
-        }
-    }
-
-    public var usageMinutes: Int { self == .frequent ? 10 : 20 }
-    public var restSeconds: Int { self == .extended ? 60 : 20 }
+public enum RestSchedule {
+    public static let usageMinutes = 20
+    public static let restSeconds = 20
+    public static let onboardingRestSeconds = 10
 }
 
 public enum RestRecordKind: String, Codable {
@@ -55,7 +42,6 @@ public struct RestSession: Codable, Equatable {
 
 public struct RestState: Codable {
     public var onboardingComplete = false
-    public var routine: RestRoutine = .classic
     public var records: [RestRecord] = []
     public var activeSession: RestSession?
 
@@ -65,7 +51,7 @@ public struct RestState: Codable {
 public enum RestLogic {
     public static func start(_ state: inout RestState, at date: Date, durationOverride: Int? = nil) {
         guard state.activeSession == nil else { return }
-        let duration = durationOverride ?? state.routine.restSeconds
+        let duration = durationOverride ?? RestSchedule.restSeconds
         precondition(duration > 0, "A guided rest must have a positive duration.")
         state.activeSession = RestSession(startedAt: date, durationSeconds: duration)
     }
@@ -113,5 +99,32 @@ public struct RestMetrics {
         confirmedCount = included.filter { $0.kind == .confirmed }.count
         skippedCount = included.filter { $0.kind == .skipped }.count
         activeDays = Set(guided.map { calendar.startOfDay(for: $0.date) }).count
+    }
+}
+
+public struct RestGarden {
+    public let trees: [RestRecord]
+    public let totalTreeCount: Int
+    public let currentStreak: Int
+
+    public var treeCount: Int { trees.count }
+
+    public init(records: [RestRecord], asOf date: Date = Date(), calendar: Calendar = .current) {
+        let completed = records.filter { $0.kind == .guided && $0.date <= date }
+        trees = completed.filter { calendar.isDate($0.date, inSameDayAs: date) }
+            .sorted { $0.date < $1.date }
+        totalTreeCount = completed.count
+        let days = Set(completed.map { calendar.startOfDay(for: $0.date) })
+
+        var day = calendar.startOfDay(for: date)
+        if !days.contains(day) {
+            day = calendar.date(byAdding: .day, value: -1, to: day)!
+        }
+        var streak = 0
+        while days.contains(day) {
+            streak += 1
+            day = calendar.date(byAdding: .day, value: -1, to: day)!
+        }
+        currentStreak = streak
     }
 }

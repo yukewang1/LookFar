@@ -1,33 +1,16 @@
-# Look Far design QA
+# Look Far forest update QA
 
-Source: `Design/selected-reference.png`, selected concept 3. Final implementation: `Design/QA/today-final.png` and `today-final-normalized.png`.
+This update replaces the earlier rest-launch screen and routine picker with a daily forest dashboard. The old source-matching report no longer describes the current layout.
 
-Viewport: native iPhone 17e, 390 × 844 points, iOS 26.5. Implementation captures are 1170 × 2532 pixels at 3× density. The 853 × 1844 source and implementation were normalized to approximately 390 × 844 and opened together in the same comparison input. CSS viewport does not apply. Neither image includes a device bezel; the implementation uses the actual system status bar and native iOS tabs.
+Visual QA uses the Look Far iPhone Simulator, iOS 26.5, at 390 × 844 points; native captures are 1170 × 2532 pixels. Verified captures: `Design/QA/guided-rest-concise.png`, `Design/QA/screen-time-required.png`, `Design/QA/screen-time-revoked.png`, and `Design/QA/settings-custom-rhythm.png`. UI completion tests use accelerated timers; the onboarding trial lasts 10 seconds, and normal rests use the duration saved in Settings (20 seconds by default). The app keeps its forest, ivory, sage, serif headings, and native three-tab navigation.
 
-State: Today, classic 20/20 routine. The current empty history shows zero timed rests; the source illustrates four. This intentional content difference follows removal of sample data. The inactive monitoring line reflects Simulator capabilities. Look Far replaces the source’s placeholder name. These requested differences are excluded from fidelity findings.
+- Onboarding has one concise introduction that starts a 10-second guided trial immediately. Completion and Skip both lead to required Screen Time access before the minimal paywall. Denial offers no bypass. Primary actions stay visible.
+- Settings alone offers screen-use and rest-duration controls, both in steps of 5. Automatic pauses run 24/7 without start/end-hour selectors; users can skip each break.
+- During a break, “Look far.”, a brief end cue, seconds remaining, elapsed progress, and Skip accompany the quiet horizon. Countdown/progress use the saved session deadline. Reduce Motion disables the repeating horizon and progress animation. Every completed rest earns a tree.
+- Today shows an initially empty grove, growing one tree per completed rest that day. It resets at local midnight without deleting history. The grove scrolls horizontally as it grows; Screen Time, rest totals, and a small manual-break action sit below it.
+- Progress shows lifetime trees/streak, weekly/monthly completed-break charts, rest duration, and dated history. Confirmations/skips stay distinct.
+- The paywall contains only its title, a short free-placeholder label, and Continue. Learn remains the third tab. Revoking Screen Time access closes membership/settings or the active rest and blocks the main UI. Interrupted rests earn no tree; past history remains intact.
 
-## Comparison history
+Validation: 15 core tests, 3 monitoring-configuration tests, and 16 Simulator UI tests pass; the unsigned iOS Release build succeeds. The initial UI run passed 15/16 flows; after correcting the custom-rhythm test to use the captured native Stepper identifiers, its targeted rerun passed. Run the core command in `README.md` and Xcode **Product → Test**. UI coverage includes onboarding, demo skip, denied access, Simulator gating, revoked access during onboarding/settings/membership/rest, authorized session restoration, tree rewards, Progress, and Learn. Current run results are recorded in the pull request.
 
-1. Initial checks found an untappable blank area in the progress row, an oversized landscape, and a truncated pause heading. Full hit shapes, constrained landscape dimensions, and a taller scrollable pause sheet resolved them. The original app flow tests passed after these fixes.
-2. The first normalized comparison found a P2 hard lower edge on the landscape. A fade using the existing raster asset resolved it; subsequent combined source/implementation comparisons confirmed a seamless lower edge.
-3. The Look Far rename removes demo copy, synthetic progress, and the testing lab. The latest source/Today pair was compared together after a clean Simulator restart. The new branding and zero-history state preserve the selected composition. Onboarding, plans, and active/restored purchase screens were inspected from native captures. The subtitle is readable, both actual plan prices and the purchase action are visible, and app-authored demo labels are absent. No actionable P0/P1/P2 findings remain at this viewport.
-
-## Required fidelity surfaces
-
-- **Typography:** native system serif headings retain the source’s two-line hierarchy. The generated source supplied no font file; system serif is an accepted approximation. Sans-serif labels and the new onboarding subtitle remain readable. No primary heading truncation is visible.
-- **Spacing:** 24-point main margins, cream capsule action, routine summary, reset, and progress shortcut retain the composition. Image height accommodates native safe areas. Native floating tabs are an intentional platform difference. Onboarding remains scrollable and its Continue action is visible at the tested size.
-- **Colors:** shared forest, ivory, sage, and secondary-text tokens preserve the visual direction. Background grain outside the landscape is omitted as an accepted native simplification.
-- **Imagery:** the actual generated raster preserves lake, layered hills, left-side pines, and distant warm moon. The lower fade has no visible seam. Smaller moon and different tree silhouettes are P3 differences; no code-drawn replacement is used.
-- **Copy/content:** Look Far and Eye Strain Relief & Breaks are the chosen brand and subtitle. Timed rests, confirmed breaks, and skips remain distinct. Prices come from RevenueCat. Health limitations, billing terms, and privacy information remain; app-authored demo/prototype wording and synthetic history are removed.
-
-The normalized comparison makes layout, type, and controls readable without a separate crop. Onboarding and plan text were also inspected in larger native captures. App-owned content is distinguished from system chrome.
-
-## Verification and remaining gaps
-
-- Renamed app build passed; all 9 core tests and all 4 iOS UI tests passed (`/tmp/lookfar-renamed-tests.xcresult`).
-- Covered onboarding, timed completion/history, routine changes, confirmed breaks without inflated timed-rest or skip counts, metrics/learning navigation, annual/monthly selection, RevenueCat prices, cancellation, simulated failure/success, restore, and retained entitlement after relaunch.
-- Normal launches use actual history and full rest durations. RevenueCat’s SDK-owned Test Store confirmation remains part of local purchase testing.
-- Physical-device Screen Time behavior, Apple sandbox/TestFlight purchases, largest Dynamic Type sizes, and VoiceOver traversal remain unvalidated. The removed pause preview is no longer a test surface; physical automatic pauses still require device validation.
-- Source-font approximation, native floating tabs, and minor landscape differences remain accepted P3 refinements.
-
-final result: passed
+Physical-device Screen Time authorization, all-app threshold/shield behavior, actual report totals, audio/haptics, VoiceOver traversal, and the largest Dynamic Type sizes still need device QA. Normal Simulator runs preview the intro/rest but stop at the required-access gate. DEBUG UI tests use explicit authorization fixtures to test dashboard and permission states; they do not simulate real usage totals. Screen Time device behavior still needs signed physical-iPhone QA.
