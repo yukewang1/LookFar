@@ -8,8 +8,8 @@ final class LookFarUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Build a habit\nfor your eyes."].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["onboardingStartRest"].isHittable)
         XCTAssertEqual(app.buttons["onboardingStartRest"].label, "Try a 10-second break")
-        XCTAssertFalse(app.steppers["usageMinutes"].exists)
-        XCTAssertFalse(app.steppers["restSeconds"].exists)
+        XCTAssertFalse(app.buttons["editRhythm"].exists)
+        XCTAssertFalse(app.pickerWheels.firstMatch.exists)
         XCTAssertFalse(app.staticTexts["Try a little\ndistance."].exists)
         attach(app, "onboarding-introduction")
         tap(app.buttons["onboardingStartRest"], in: app)
@@ -87,10 +87,9 @@ final class LookFarUITests: XCTestCase {
     }
 
     @MainActor func testConfirmedBreakDoesNotPlantTree() throws {
-        let app = launch(skipOnboarding: true)
-        tap(app.buttons["Settings"], in: app)
-        tap(app.buttons["confirmOwnBreak"], in: app)
-        app.buttons["Done"].tap()
+        let app = launch(skipOnboarding: true, pendingBreak: true)
+        tap(app.buttons["pauseConfirm"], in: app)
+        XCTAssertTrue(app.staticTexts["treeCount"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["treeCount"].label.contains("0 trees"))
         app.tabBars.buttons["Progress"].tap()
         let confirmed = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Break confirmed")).firstMatch
@@ -101,35 +100,54 @@ final class LookFarUITests: XCTestCase {
 
     @MainActor func testCustomRhythmIsSavedInSettingsAndUsedForManualRest() throws {
         let app = launch(skipOnboarding: true, fullRest: true)
-        XCTAssertFalse(app.steppers["usageMinutes"].exists)
-        XCTAssertFalse(app.steppers["restSeconds"].exists)
+        XCTAssertFalse(app.buttons["editRhythm"].exists)
+        XCTAssertFalse(app.pickerWheels.firstMatch.exists)
         tap(app.buttons["Settings"], in: app)
+        XCTAssertTrue(app.staticTexts["rhythmSummary"].label.contains("20 min / 20 sec"))
+        XCTAssertFalse(app.buttons["confirmOwnBreak"].exists)
+        XCTAssertFalse(app.buttons["I already took a break"].exists)
+        XCTAssertFalse(app.steppers.firstMatch.exists)
+        XCTAssertFalse(app.buttons["Save active hours"].exists)
+        attach(app, "settings-before-edit")
+        tap(app.buttons["editRhythm"], in: app)
 
-        let usage = app.steppers["usageMinutes"]
-        let rest = app.steppers["restSeconds"]
+        let usage = app.pickers["usageMinutes"].pickerWheels.firstMatch
+        let rest = app.pickers["restSeconds"].pickerWheels.firstMatch
         XCTAssertTrue(usage.waitForExistence(timeout: 5))
-        XCTAssertEqual(usage.label, "Screen use: 20 minutes")
-        XCTAssertEqual(rest.label, "Rest: 20 seconds")
-        attach(app, "settings-default-rhythm")
+        XCTAssertTrue((usage.value as? String)?.contains("20 minutes") == true)
+        XCTAssertTrue((rest.value as? String)?.contains("20 seconds") == true)
+        attach(app, "rhythm-editor-default")
 
-        for _ in 0..<2 { tap(usage.buttons["usageMinutes-Increment"], in: app) }
-        for _ in 0..<2 { tap(rest.buttons["restSeconds-Decrement"], in: app) }
-        XCTAssertEqual(usage.label, "Screen use: 30 minutes")
-        XCTAssertEqual(rest.label, "Rest: 10 seconds")
-        attach(app, "settings-custom-rhythm")
+        usage.adjust(toPickerWheelValue: "30 minutes")
+        rest.adjust(toPickerWheelValue: "10 seconds")
+        tap(app.navigationBars["Break timing"].buttons["BackButton"], in: app)
+        XCTAssertTrue(app.buttons["editRhythm"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["rhythmSummary"].label.contains("20 min / 20 sec"))
+
+        tap(app.buttons["editRhythm"], in: app)
+        XCTAssertTrue(usage.waitForExistence(timeout: 5))
+        XCTAssertTrue((usage.value as? String)?.contains("20 minutes") == true)
+        XCTAssertTrue((rest.value as? String)?.contains("20 seconds") == true)
+        usage.adjust(toPickerWheelValue: "30 minutes")
+        rest.adjust(toPickerWheelValue: "10 seconds")
+        attach(app, "rhythm-editor-custom")
+        tap(app.buttons["saveRhythm"], in: app)
+        XCTAssertTrue(app.buttons["editRhythm"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["rhythmSummary"].label.contains("30 min / 10 sec"))
+        attach(app, "settings-saved-rhythm")
         app.buttons["Done"].tap()
 
         XCTAssertTrue(app.staticTexts["todayTreeStatus"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["todayTreeStatus"].label, "Your first tree starts with a 10-second rest.")
-        XCTAssertFalse(app.steppers["usageMinutes"].exists)
-        XCTAssertFalse(app.steppers["restSeconds"].exists)
+        XCTAssertFalse(app.buttons["editRhythm"].exists)
+        XCTAssertFalse(app.pickerWheels.firstMatch.exists)
         tap(app.buttons["Settings"], in: app)
+        XCTAssertTrue(app.staticTexts["rhythmSummary"].label.contains("30 min / 10 sec"))
+        tap(app.buttons["editRhythm"], in: app)
         XCTAssertTrue(usage.waitForExistence(timeout: 5))
-        XCTAssertEqual(usage.label, "Screen use: 30 minutes")
-        XCTAssertEqual(rest.label, "Rest: 10 seconds")
-        XCTAssertFalse(app.buttons["Save active hours"].exists)
-        XCTAssertFalse(app.steppers.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "From ", "Until ")).firstMatch.exists)
-        attach(app, "settings-saved-rhythm")
+        XCTAssertTrue((usage.value as? String)?.contains("30 minutes") == true)
+        XCTAssertTrue((rest.value as? String)?.contains("10 seconds") == true)
+        tap(app.navigationBars["Break timing"].buttons["BackButton"], in: app)
         app.buttons["Done"].tap()
 
         tap(app.buttons["quickRest"], in: app)
@@ -139,6 +157,37 @@ final class LookFarUITests: XCTestCase {
         tap(app.buttons["finishRest"], in: app)
         XCTAssertTrue(app.staticTexts["treeCount"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["treeCount"].label.contains("1 tree"))
+    }
+
+    @MainActor func testTimingEditorIsReachableAtLargestDynamicType() throws {
+        let app = launch(skipOnboarding: true, extraArguments: [
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
+        ])
+        tap(app.buttons["Settings"], in: app)
+        XCTAssertTrue(app.buttons["editRhythm"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["rhythmSummary"].label.contains("20 min / 20 sec"))
+        XCTAssertFalse(app.buttons["confirmOwnBreak"].exists)
+        XCTAssertFalse(app.buttons["I already took a break"].exists)
+        XCTAssertTrue(app.buttons["Done"].isHittable)
+        attach(app, "settings-largest-dynamic-type")
+
+        tap(app.buttons["editRhythm"], in: app)
+        let form = app.collectionViews.firstMatch
+        for identifier in ["usageMinutes", "restSeconds"] {
+            let wheel = app.pickers[identifier].pickerWheels.firstMatch
+            for _ in 0..<4 where !wheel.exists || !wheel.isHittable {
+                // Scroll along the form's edge so the gesture does not spin a picker.
+                form.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.8))
+                    .press(forDuration: 0.01, thenDragTo: form.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.25)))
+            }
+            XCTAssertTrue(wheel.exists)
+            XCTAssertTrue(wheel.isHittable)
+        }
+        XCTAssertTrue(app.buttons["saveRhythm"].isHittable)
+        attach(app, "rhythm-editor-largest-dynamic-type")
+        tap(app.buttons["saveRhythm"], in: app)
+        XCTAssertTrue(app.buttons["editRhythm"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["rhythmSummary"].label.contains("20 min / 20 sec"))
     }
 
     @MainActor func testMembershipPlaceholderAndLearn() throws {
@@ -260,14 +309,16 @@ final class LookFarUITests: XCTestCase {
         case restoringApproved = "restoring-approved"
     }
 
-    @MainActor private func launch(skipOnboarding: Bool = false, fullRest: Bool = false, restoredRest: Bool = false,
-                                   screenTime: ScreenTimeFixture? = .approved) -> XCUIApplication {
+    @MainActor private func launch(skipOnboarding: Bool = false, fullRest: Bool = false, restoredRest: Bool = false, pendingBreak: Bool = false,
+                                   screenTime: ScreenTimeFixture? = .approved, extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
         if skipOnboarding { app.launchArguments.append("--skip-onboarding") }
         if fullRest { app.launchArguments.append("--ui-testing-full-rest") }
         if restoredRest { app.launchArguments.append("--ui-testing-restored-rest") }
+        if pendingBreak { app.launchArguments.append("--ui-testing-pending-break") }
         if let screenTime { app.launchArguments.append("--ui-testing-screen-time=\(screenTime.rawValue)") }
+        app.launchArguments.append(contentsOf: extraArguments)
         app.launch()
         return app
     }

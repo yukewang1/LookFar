@@ -45,6 +45,7 @@ final class ScreenTimeManager {
         if let authorizationFixture {
             isAuthorized = authorizationFixture == .approved || authorizationFixture == .revokedOnForeground
             isEnabled = isAuthorized
+            hasPendingBreak = isAuthorized && ProcessInfo.processInfo.arguments.contains("--ui-testing-pending-break")
             isResolvingAuthorization = authorizationFixture == .restoringApproved
             if authorizationFixture == .revokedOnForeground {
                 foregroundObserver = NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)

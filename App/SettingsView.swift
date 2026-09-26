@@ -12,25 +12,20 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    Stepper("Screen use: \(store.monitoring.usageMinutes) minutes", value: Binding(
-                        get: { store.monitoring.usageMinutes },
-                        set: { saveRhythm(usageMinutes: $0, restSeconds: store.monitoring.restSeconds) }
-                    ), in: 5...120, step: 5)
-                    .accessibilityIdentifier("usageMinutes")
-                    Stepper("Rest: \(store.monitoring.restSeconds) seconds", value: Binding(
-                        get: { store.monitoring.restSeconds },
-                        set: { saveRhythm(usageMinutes: store.monitoring.usageMinutes, restSeconds: $0) }
-                    ), in: 5...120, step: 5)
-                    .accessibilityIdentifier("restSeconds")
-                    Button("I already took a break") { store.confirmOwnBreak() }
-                        .accessibilityIdentifier("confirmOwnBreak")
+                    NavigationLink {
+                        RhythmSettingsView(store: store)
+                    } label: {
+                        LabeledContent("Break timing") {
+                            Text("\(store.monitoring.usageMinutes) min / \(store.monitoring.restSeconds) sec")
+                                .foregroundStyle(AppTheme.secondary)
+                                .accessibilityIdentifier("rhythmSummary")
+                        }
+                    }.accessibilityIdentifier("editRhythm")
                     Toggle("End sound", isOn: Binding(get: { store.soundEnabled }, set: { store.setSound($0) }))
                     Button(store.notificationPermission ? "End notifications are enabled" : "Enable end notifications") {
                         Task { await store.requestNotifications() }
                     }.disabled(store.notificationPermission)
-                } header: { Text("Your rhythm") } footer: {
-                    Text("Changes start a fresh usage cycle. A rest already in progress keeps its original duration.")
-                }
+                } header: { Text("Your rhythm") }
 
                 Section {
                     if store.monitoring.isAvailable {
@@ -54,7 +49,7 @@ struct SettingsView: View {
                     if let error = store.monitoring.errorMessage { Text(error).font(.footnote).foregroundStyle(.orange) }
                     Button("Release apps & stop monitoring") { store.monitoring.release() }
                 } header: { Text("Automatic pauses") } footer: {
-                    Text("App use adds up throughout the day and night. Use “I already took a break” to reset your cycle after time away. The Today total always includes all eligible apps on this iPhone.")
+                    Text("App use adds up throughout the day and night. The Today total always includes all eligible apps on this iPhone.")
                 }
 
                 Section {
@@ -86,8 +81,69 @@ struct SettingsView: View {
         }
     }
 
-    private func saveRhythm(usageMinutes: Int, restSeconds: Int) {
-        do { try store.monitoring.saveRhythm(usageMinutes: usageMinutes, restSeconds: restSeconds) }
-        catch { store.errorMessage = error.localizedDescription }
+}
+
+private struct RhythmSettingsView: View {
+    let store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var usageMinutes: Int
+    @State private var restSeconds: Int
+    @State private var errorMessage: String?
+
+    init(store: AppStore) {
+        self.store = store
+        _usageMinutes = State(initialValue: store.monitoring.usageMinutes)
+        _restSeconds = State(initialValue: store.monitoring.restSeconds)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Screen use", selection: $usageMinutes) {
+                    ForEach(Array(stride(from: 5, through: 120, by: 5)), id: \.self) { minutes in
+                        Text("\(minutes) minutes").tag(minutes)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .accessibilityIdentifier("usageMinutes")
+            } header: { Text("Screen use") }
+
+            Section {
+                Picker("Rest", selection: $restSeconds) {
+                    ForEach(Array(stride(from: 5, through: 120, by: 5)), id: \.self) { seconds in
+                        Text("\(seconds) seconds").tag(seconds)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .accessibilityIdentifier("restSeconds")
+            } header: { Text("Rest") } footer: {
+                Text("Save to apply both durations and start a fresh usage cycle. A rest already in progress keeps its original duration.")
+            }
+        }
+        .scrollContentBackground(.hidden).background(AppTheme.background)
+        .foregroundStyle(AppTheme.cream)
+        .navigationTitle("Break timing").navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save", action: save).accessibilityIdentifier("saveRhythm")
+            }
+        }
+        .alert("Timing needs attention", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: { Text(errorMessage ?? "") }
+    }
+
+    private func save() {
+        do {
+            if usageMinutes != store.monitoring.usageMinutes || restSeconds != store.monitoring.restSeconds {
+                try store.monitoring.saveRhythm(usageMinutes: usageMinutes, restSeconds: restSeconds)
+            }
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

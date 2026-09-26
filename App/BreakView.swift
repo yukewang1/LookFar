@@ -154,6 +154,7 @@ struct PauseView: View {
                     .accessibilityIdentifier("pauseSkip")
                 Button("I already took a break") { store.confirmOwnBreak() }
                     .frame(maxWidth: .infinity, minHeight: 44).foregroundStyle(AppTheme.secondary)
+                    .accessibilityIdentifier("pauseConfirm")
             }
             .padding(28).frame(maxWidth: .infinity)
         }
