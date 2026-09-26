@@ -8,41 +8,53 @@ A native iPhone app for regular distance-looking breaks, with a quiet dark fores
 
 1. Open `LookFar.xcodeproj` in Xcode 26.5 or later.
 2. Select the **LookFar** scheme and an **iOS 26.5+ iPhone simulator**.
-3. Run. Complete the three-screen introduction, then start a rest.
+3. Run to preview the introduction and guided break. Screen Time access is required before the membership preview or main tabs; normal Simulator runs stop at this gate. Use a signed physical iPhone for the complete flow.
 
-Subscriptions use **RevenueCat iOS SDK 5.90.2**, pinned through Swift Package Manager. The proposed plans are **US$39.99/year** and **US$7.99/month**; connected prices come from the configured offering and store products. Features currently remain open regardless of subscription state. See the subscription setup below before testing purchases.
+The paywall is a **free placeholder**. It does not configure RevenueCat, load products, or offer purchases. The existing RevenueCat SDK/configuration remains in the project for later integration; the setup notes below describe that deferred integration.
 
 The command-line tools on this Mac currently point to Command Line Tools. Shell builds should use `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`; changing the machine-wide setting is unnecessary.
 
 ## Flows included
 
-- Onboarding for people with myopia or recurring screen discomfort.
-- Classic 20-minute/20-second, frequent 10-minute/20-second, and longer 20-minute/60-second routines.
-- Foreground guided rest, completion sound/haptic, interrupted-session recovery, skip, and user-confirmed reset.
-- Local history, weekly/monthly charts, timed rests, confirmed breaks, and skips.
-- Eye-health education with AOA/NEI links and explicit limits on medical claims.
-- RevenueCat offering/package selection, purchase, restore, and customer entitlement updates, validated with its Test Store.
-- Individual Screen Time authorization, app selection, active hours, usage thresholds, and three shielding/monitoring extensions.
+- Concise onboarding: one introduction opens a 10-second trial rest directly. Completing or skipping the rest leads to required Screen Time access, then the minimal free paywall placeholder.
+- Automatic pauses run 24/7, with no active-hours window. The default rhythm is 20 minutes of aggregate use followed by a 20-second break. Customize both values only in Settings → Break timing, using native scrolling wheels (5–120 minutes and 5–120 seconds, in steps of 5). Save applies both together; Back discards edits. Any break can be skipped.
+- Guided rest with a “Look far” instruction, brief end cue, quiet horizon, seconds remaining, and elapsed progress. The timer uses its saved deadline, supports interrupted-session recovery, and ends with sound/haptic feedback. Reduce Motion disables the repeating horizon and progress animation.
+- Today’s forest starts empty each local day and grows one tree per completed guided rest. Past rests remain in Progress; no history is deleted at the daily reset. Screen time, completed breaks, rest duration, and streak sit alongside the forest.
+- Progress with weekly/monthly charts and dated history. Confirmed breaks and skips stay separate and never award trees.
+- Eye-health education and practical tips in the third tab, Learn.
+- Required individual Screen Time authorization and all eligible apps included by default; optional app selection narrows automatic pauses. Losing access blocks the main UI and closes settings, membership, or an active break. An interrupted break earns no tree; past history is preserved.
+- A Device Activity Report extension displays today's aggregate screen time on this iPhone. Its usage data stays inside Apple's report extension.
 
-**Simulator limits:** iOS Simulator cannot validate real Screen Time authorization, app usage, or shielding. Being away from this app never silently counts as being away from the phone.
+**Simulator limits:** iOS Simulator cannot provide real Screen Time authorization, usage totals, or shielding. The introduction and demo rest can be previewed, but there is no normal bypass into the app. Explicit DEBUG authorization fixtures let UI tests exercise the dashboard and permission states; they do not validate Screen Time itself. Being away from this app never silently counts as being away from the phone.
 
-**Real gaps:** standard Screen Time callbacks do not establish continuous whole-phone inactivity. “I already took a break” resets the cycle and records a confirmation separately. Automatic confirmed-idle reset is not implemented.
+**Existing users:** saved history, explicit app selections, usage intervals, and authorized active sessions are preserved. Legacy routine presets no longer apply; the rest duration defaults to 20 seconds until changed in Settings. Enabled active-hours schedules and older registrations without usage checkpoints are replaced on the next app refresh, starting a fresh usage cycle while preserving any pending break and guided deadline. Saving timing in Settings also starts a fresh usage cycle; an in-progress rest retains its original duration. There is no history deletion or service downtime.
 
-The short break timer uses its saved deadline. In the foreground, it completes and releases restrictions automatically. After locking or terminating the app, release is reconciled on return or a shield action; exact background release and notification delivery are not promised. Skipping or turning off monitoring always releases this app's restrictions.
+**Estimated gaps:** automatic monitoring registers cumulative checkpoints every minute of eligible usage. iOS delivers them to the monitoring extension; the main app does not need to remain open, and checkpoint state is saved between callbacks. Between accepted callbacks, elapsed wall time minus newly counted usage estimates time away. At five minutes or more, Look Far starts a fresh usage cycle before showing a break, including when the final threshold callback detects the gap. The first checkpoint establishes a baseline; duplicates and older checkpoints are ignored, and a new local day starts a new baseline. Already pending or active breaks are preserved. Estimated resets do not award trees or add rest history.
+
+Detection happens after usage resumes, usually at the next minute checkpoint. The fresh cycle discards usage before detection (typically up to one resumed minute; potentially more if callbacks are missed). Callback delays and several shorter gaps can resemble one long break. With a custom app selection, time spent in unselected apps also looks like time away. This is an estimate, not verified whole-phone inactivity or a confirmed eye rest. “I already took a break” on the break prompt remains an explicit reset.
+
+The short break timer uses its saved deadline. In the foreground, it completes and releases restrictions automatically. After locking or terminating the app, release is reconciled on return, a shield action, or a later monitoring callback; exact background release and notification delivery are not promised. Skipping or turning off monitoring always releases this app's restrictions.
 
 ## Physical iPhone and TestFlight
 
 **Bundle identity changed:** the app now uses `dev.local.lookfar` and App Group `group.dev.local.lookfar`. It installs separately from the earlier Stillfar build. Existing Stillfar history stays in that app’s container and is not automatically migrated; retain the earlier app if you need its records.
 
-The project selects **Norvane Systems Ltd.** (team `VRT5976586`). The main bundle identifier `dev.local.lookfar` is registered with App Groups and Family Controls (Development). Real Screen Time behavior still requires a signed physical-device test. Sign into that team in Xcode, finish registering the extension identifiers, and register/configure `group.dev.local.lookfar` for the app and extensions.
+The project selects **Norvane Systems Ltd.** (team `VRT5976586`). The app and all four extension identifiers are registered with Family Controls (Development and Distribution). App Group `group.dev.local.lookfar` is configured for the app and monitoring/shield extensions. Sign into that team in Xcode for signed builds. Real Screen Time behavior still requires a physical-device test.
 
-Enable Family Controls and the App Group for the app and extensions. Distribution needs Apple's Family Controls entitlement approval for the relevant identifiers. The source project does not include signing credentials.
+The report extension, `dev.local.lookfar.screentimereport`, deliberately has no App Group; it renders usage totals within its sandbox. Apple's Family Controls distribution approval is in place, and distribution signing passed for the app and all four extensions. The source project does not include signing credentials.
 
-**App Store Connect is created:** [Look Far: Eye Strain Relief](https://appstoreconnect.apple.com/apps/6813801317/distribution/info), app ID `6813801317`, SKU `lookfar-ios`, English (U.S.), Health & Fitness. Its subtitle is **Eye Strain Relief & Breaks**. The app is a draft in Prepare for Submission; no build has been uploaded or submitted for review. The visible name inside the app remains **Look Far**. The store draft starts at version 1.0; align it with the intended release build before submission.
+To test the estimated gap on an iPhone:
+
+1. Set Break timing to 5 minutes / 10 seconds and enable automatic pauses. Use eligible apps continuously; confirm that the shield appears around five counted minutes and Skip releases it.
+2. Start a fresh cycle, use eligible apps for about three minutes, then lock the phone for at least six minutes. Resume usage. The old two-minute remainder should not trigger a break; the next usage checkpoint should restart the cycle, with a shield after roughly another five counted minutes.
+3. Repeat with a short gap under five minutes; usage should continue accumulating. Also test the normal 20-minute setting and a custom app selection, keeping the limitations above in mind.
+4. Repeat with Look Far backgrounded and after force-quitting it. Verify that an already displayed prompt or a running rest is not dismissed by the gap estimate, and that automatic reminders still work after a rest ends while Look Far is backgrounded. Check across midnight as well. These checks require real Screen Time callbacks; Simulator fixtures cannot validate them.
+
+**App Store Connect:** [Look Far: Eye Strain Relief](https://appstoreconnect.apple.com/apps/6813801317/distribution/info), app ID `6813801317`, SKU `lookfar-ios`, English (U.S.), Health & Fitness. Its subtitle is **Eye Strain Relief & Breaks**. Build **0.1.0 (1)** is available for internal TestFlight testing in **Yuke Automatic**, with the tester invited and automatic distribution enabled for future Xcode builds. The App Store draft remains in Prepare for Submission and has not been submitted for review. The visible name inside the app remains **Look Far**. The store draft starts at version 1.0; align it with the intended release build before submission.
 
 ## RevenueCat subscription setup
 
-The RevenueCat manager replaces the app's direct StoreKit transaction manager. Configure `Config/RevenueCat.xcconfig`; the Xcode project expands these values through `Config/LookFar-Info.plist` into the app bundle:
+This integration is retained for later activation and is not used by the current placeholder paywall. Configure `Config/RevenueCat.xcconfig`; the Xcode project expands these values through `Config/LookFar-Info.plist` into the app bundle:
 
 | Build setting | Info.plist key | Value |
 | --- | --- | --- |
@@ -56,11 +68,11 @@ Create annual and monthly products, attach both to the `plus` entitlement, and p
 
 **App Store / TestFlight:** create the iOS app in RevenueCat and configure its connection to App Store Connect. Create one Apple subscription group containing `dev.lookfar.plus.annual` and `dev.lookfar.plus.monthly`, set the prices/periods, and connect the products to the RevenueCat entitlement and offering. Use the iOS public `appl_` SDK key before archiving; Release builds reject Test Store keys. TestFlight uses Apple's sandbox, not the RevenueCat Test Store or Xcode's local StoreKit file. Purchase, restore, and entitlement checks must be repeated in that environment.
 
-Only public SDK keys belong in this config. Do not put RevenueCat secret API keys or App Store Connect private credentials in the app. Privacy/terms screens are prototype text, not published production policies.
+Only public SDK keys belong in this config. Do not put RevenueCat secret API keys or App Store Connect private credentials in the app. Production privacy/terms pages are still needed before activating subscriptions.
 
 ## Data and privacy
 
-Routine preferences and rest history stay on the device. They are not sent to RevenueCat. When configured, RevenueCat receives an anonymous app user identifier and purchase/customer subscription information to manage access. There is no Look Far account or app-owned backend. App Store payments are handled by Apple; the app does not collect payment-card details. See [RevenueCat's privacy policy](https://www.revenuecat.com/privacy/).
+Rest history and monitoring preferences stay on the device. The current placeholder does not contact RevenueCat. When the deferred integration is activated, RevenueCat receives an anonymous app user identifier and purchase/customer subscription information to manage access. There is no Look Far account or app-owned backend. App Store payments are handled by Apple; the app does not collect payment-card details. See [RevenueCat's privacy policy](https://www.revenuecat.com/privacy/).
 
 ## Checks
 
@@ -73,9 +85,9 @@ SWIFTPM_MODULECACHE_OVERRIDE=/tmp/lookfar-swift-cache \
 swift test --disable-sandbox --scratch-path /tmp/lookfar-core-build
 ```
 
-The renamed Look Far app passed **9 core tests and all 4 iOS Simulator UI tests**. RevenueCat Test Store checks passed for the US$39.99 annual / US$7.99 monthly prices, cancellation, simulated purchase failure and success, restoring purchases, and retaining entitlement access after relaunch. **Physical-iPhone Screen Time behavior and Apple sandbox/TestFlight purchases remain unvalidated.**
+**Validation for estimated gaps:** 26 core tests, 16 monitoring-configuration tests, and three affected Simulator UI tests pass; the unsigned iOS Release build also succeeds. Coverage includes the five-minute boundary, continuous use, skipped/duplicate checkpoints, persistence, generation changes, midnight, clock rollback, pending/expired rests, reset-before-shield ordering, and event registration through 120 minutes. The UI rerun covers custom 30/10 timing, largest Dynamic Type, and explicit break confirmation. The earlier 17-case UI suite covered onboarding, permissions/revocation, rest recovery, forest rewards, Progress, and Learn. **Physical-iPhone checkpoint delivery, gap estimates, Screen Time totals, all-app shielding, and audio/haptic delivery remain unvalidated.**
 
-In Xcode, **Product → Test** runs the app UI tests. UI tests use a two-second timer and isolated in-memory history; normal runs use the full selected duration. Optional launch arguments: `--skip-onboarding` and `--ui-testing` (test-only shortened timer and nonpersistent history). Normal runs use only the user’s saved records; sample history and the Settings testing lab have been removed.
+In Xcode, **Product → Test** runs the app UI tests. `--ui-testing` uses a two-second timer and nonpersistent history; add `--ui-testing-full-rest` for real durations (a 10-second onboarding trial, otherwise the configured rest duration). DEBUG UI tests use `--ui-testing-screen-time=<state>`, where state is `approved`, `notDetermined`, `denied`, `revoked-on-foreground`, or `restoring-approved`. These fixtures require `--ui-testing` and are absent from Release builds. `--skip-onboarding` skips the introduction but does not bypass required authorization. Normal runs use the full timer and the user’s saved records; sample history and the Settings testing lab have been removed.
 
 `scripts/generate_project.py` regenerates the checked-in Xcode project using only Python's standard library. Run it after adding/removing source files. Reapply any local signing choices after regeneration.
 

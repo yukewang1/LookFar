@@ -2,58 +2,130 @@ import SwiftUI
 
 struct OnboardingView: View {
     @Bindable var store: AppStore
-    @State private var page = 0
+    @State private var stage = Stage.introduction
+    @State private var startedIntro = false
+
+    private enum Stage { case introduction, permission, membership }
+
+    init(store: AppStore) {
+        self.store = store
+        _startedIntro = State(initialValue: store.isBreakPresented)
+    }
 
     var body: some View {
+        Group {
+            if stage == .introduction {
+                introduction
+            } else if stage == .membership && store.monitoring.isAuthorized {
+                PaywallView(onContinue: { store.finishOnboarding() })
+            } else {
+                ScreenTimeAccessView(store: store) { stage = .membership }
+            }
+        }
+        .background(AppTheme.background).foregroundStyle(AppTheme.cream)
+        .onChange(of: store.isBreakPresented) { _, presented in
+            guard !presented, startedIntro else { return }
+            startedIntro = false
+            stage = .permission
+        }
+        .onChange(of: store.monitoring.isAuthorized) { wasAuthorized, authorized in
+            if wasAuthorized && !authorized { stage = .permission }
+        }
+    }
+
+    private var introduction: some View {
         GeometryReader { geometry in
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(Brand.name).font(AppTheme.title(30))
-                            Text(Brand.subtitle).font(.caption).foregroundStyle(AppTheme.secondary)
-                        }
-                        Spacer()
-                        Text("\(page + 1) / 3").font(.caption).foregroundStyle(AppTheme.secondary)
-                    }.padding(.horizontal, 26).padding(.top, 20)
-                    LandscapeView(height: min(260, geometry.size.height * 0.34))
-                    VStack(alignment: .leading, spacing: 20) {
-                        SectionEyebrow(text: page == 0 ? "Gentle eye breaks" : page == 1 ? "Your rhythm" : "On your terms")
-                        Text(page == 0 ? "A little distance.\nA daily kindness." : page == 1 ? "Make rest\npart of your day." : "Less friction.\nMore room to rest.")
-                            .font(AppTheme.title(43)).fixedSize(horizontal: false, vertical: true)
-                        if page == 0 {
-                            Text("For people with myopia, tired eyes, or long screen days. Build a small habit of looking away.")
-                                .foregroundStyle(AppTheme.secondary).lineSpacing(4)
-                            QuietRow(symbol: "eye", title: "A habit, not a treatment", detail: "Breaks don't correct myopia or prevent retinal disease. Keep your regular eye care.")
-                        } else if page == 1 {
-                            ForEach(RestRoutine.allCases) { routine in
-                                Button { store.setRoutine(routine) } label: {
-                                    HStack {
-                                        Text(routine.title).font(.headline)
-                                        Spacer()
-                                        Text("\(routine.usageMinutes)m / \(routine.restSeconds)s").foregroundStyle(AppTheme.secondary)
-                                        Image(systemName: store.state.routine == routine ? "checkmark.circle.fill" : "circle")
-                                            .foregroundStyle(AppTheme.sage)
-                                    }.padding(.vertical, 12).contentShape(Rectangle())
-                                }.buttonStyle(.plain)
-                            }
-                        } else {
-                            QuietRow(symbol: "hand.raised", title: "You stay in control", detail: "Choose apps to pause, skip when needed, or start a rest yourself.")
-                            QuietRow(symbol: "chart.bar", title: "See the habit grow", detail: "Track recorded rests and weekly consistency. Your history stays on this device.")
-                            Text("Automatic app pauses need Screen Time permission on a physical iPhone. You can set that up later.")
-                                .font(.footnote).foregroundStyle(AppTheme.secondary)
-                        }
-                        PrimaryButton(title: page == 2 ? "Make space for a break" : "Continue") {
-                            if page == 2 { store.finishOnboarding() }
-                            else { withAnimation(.easeInOut(duration: 0.2)) { page += 1 } }
-                        }.accessibilityIdentifier("onboardingContinue")
-                        if page > 0 {
-                            Button("Back") { page -= 1 }.frame(maxWidth: .infinity, minHeight: 44)
-                                .foregroundStyle(AppTheme.secondary)
-                        }
-                    }.padding(.horizontal, 26).padding(.bottom, 28)
+                VStack(alignment: .leading, spacing: 28) {
+                    Text(Brand.name).font(AppTheme.title(28))
+                    LandscapeView(height: min(230, geometry.size.height * 0.35))
+                        .clipShape(RoundedRectangle(cornerRadius: 28))
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Build a habit\nfor your eyes.")
+                            .font(AppTheme.title(42)).fixedSize(horizontal: false, vertical: true)
+                        Text("Look Far uses Screen Time to pause your apps for regular eye breaks. Start with a 10-second taste.")
+                            .foregroundStyle(AppTheme.secondary).lineSpacing(4)
+                    }
                 }
-            }.scrollIndicators(.hidden).background(AppTheme.background)
-        }.foregroundStyle(AppTheme.cream)
+                .padding(.horizontal, 26).padding(.top, 20).padding(.bottom, 24)
+                .frame(maxWidth: 560).frame(maxWidth: .infinity)
+            }.scrollIndicators(.hidden)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            PrimaryButton(title: "Try a 10-second break") {
+                startedIntro = true
+                store.startBreak(isOnboardingTrial: true)
+            }
+            .accessibilityIdentifier("onboardingStartRest")
+            .padding(.horizontal, 26).padding(.vertical, 14)
+            .frame(maxWidth: 560).frame(maxWidth: .infinity)
+            .background(AppTheme.background)
+        }
     }
+}
+
+struct ScreenTimeAccessView: View {
+    let store: AppStore
+    let onConnected: () -> Void
+    @State private var isConnecting = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                Text(Brand.name).font(AppTheme.title(28))
+                Image(systemName: "hourglass.circle")
+                    .font(.system(size: 64, weight: .ultraLight)).foregroundStyle(AppTheme.sage)
+                    .padding(.vertical, 28).accessibilityHidden(true)
+                Text("Connect\nScreen Time.")
+                    .font(AppTheme.title(42)).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("screenTimeRequired")
+                Text(store.monitoring.isAvailable
+                     ? "Screen Time access is required for your eye-break habit. Allow access to continue."
+                     : "Screen Time access is required. Open Look Far on a physical iPhone to continue.")
+                    .foregroundStyle(AppTheme.secondary).lineSpacing(4)
+                if store.monitoring.isAvailable {
+                    Text("\(store.monitoring.selectionSummary) · 24/7")
+                        .font(.footnote).foregroundStyle(AppTheme.sage)
+                    if let error = store.monitoring.errorMessage {
+                        Text(error).font(.footnote).foregroundStyle(AppTheme.secondary)
+                            .accessibilityIdentifier("screenTimeError")
+                    }
+                }
+            }
+            .padding(.horizontal, 26).padding(.top, 20).padding(.bottom, 24)
+            .frame(maxWidth: 560).frame(maxWidth: .infinity)
+        }
+        .scrollIndicators(.hidden)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            PrimaryButton(title: buttonTitle, action: connect)
+                .disabled(isConnecting || !store.monitoring.isAvailable)
+                .accessibilityIdentifier("screenTimeConnect")
+                .padding(.horizontal, 26).padding(.vertical, 14)
+                .frame(maxWidth: 560).frame(maxWidth: .infinity)
+                .background(AppTheme.background)
+        }
+        .background(AppTheme.background).foregroundStyle(AppTheme.cream)
+    }
+
+    private var buttonTitle: String {
+        if !store.monitoring.isAvailable { return "Use a physical iPhone" }
+        if isConnecting { return "Connecting…" }
+        return store.monitoring.isAuthorized ? "Continue" : "Connect Screen Time"
+    }
+
+    private func connect() {
+        isConnecting = true
+        Task {
+            defer { isConnecting = false }
+            if !store.monitoring.isAuthorized { await store.monitoring.requestAuthorization() }
+            guard store.monitoring.isAuthorized else { return }
+            do {
+                try store.monitoring.setEnabled(true, usageMinutes: store.monitoring.usageMinutes)
+                onConnected()
+            } catch {
+                store.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
 }

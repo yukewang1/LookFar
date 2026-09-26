@@ -3,19 +3,27 @@ import Foundation
 
 final class ActivityMonitor: DeviceActivityMonitor {
     override func eventDidReachThreshold(_ event: DeviceActivityEvent.Name, activity: DeviceActivityName) {
-        guard event == ScreenTimeSupport.thresholdEvent else { return }
         do {
             var config = try ScreenTimeSupport.load()
             guard config.enabled, config.activityName == activity.rawValue else { return }
-            guard config.isWithinActiveHours(), ScreenTimeSupport.isAuthorized else {
+            guard ScreenTimeSupport.isAuthorized else {
                 try ScreenTimeSupport.clearPendingBreak()
                 return
             }
-            guard !config.pendingBreak else { return }
-            config.pendingBreak = true
-            config.breakDeadline = nil
-            try ScreenTimeSupport.save(config)
-            ScreenTimeSupport.applyShield(for: config)
+            guard let minutes = ScreenTimeSupport.usageMinutes(for: event, limit: config.useMinutes) else { return }
+            var tracker = try ScreenTimeSupport.loadUsageGapTracker(for: activity)
+            switch config.recordUsageCheckpoint(minutes: minutes, at: .now, tracker: &tracker) {
+            case .ignore:
+                return
+            case .save:
+                try ScreenTimeSupport.saveUsageGapTracker(tracker, for: activity)
+            case .restart:
+                // Check the estimated gap before shielding, including at the final usage threshold.
+                try ScreenTimeSupport.rearm(afterCheckpointIn: activity)
+            case .shield:
+                try ScreenTimeSupport.save(config)
+                ScreenTimeSupport.applyShield(for: config)
+            }
         } catch {
             ScreenTimeSupport.clearShield()
             ScreenTimeSupport.recordFailure(error)
@@ -23,18 +31,22 @@ final class ActivityMonitor: DeviceActivityMonitor {
     }
 
     override func intervalDidStart(for activity: DeviceActivityName) {
-        clearBreak(for: activity)
+        reconcileBreak(for: activity)
     }
 
     override func intervalDidEnd(for activity: DeviceActivityName) {
-        clearBreak(for: activity)
+        reconcileBreak(for: activity)
     }
 
-    private func clearBreak(for activity: DeviceActivityName) {
+    private func reconcileBreak(for activity: DeviceActivityName) {
         do {
             let config = try ScreenTimeSupport.load()
             guard config.activityName == activity.rawValue else { return }
-            try ScreenTimeSupport.clearPendingBreak()
+            if !config.enabled || !ScreenTimeSupport.isAuthorized {
+                try ScreenTimeSupport.clearPendingBreak()
+            } else if let deadline = config.breakDeadline, deadline <= .now {
+                try ScreenTimeSupport.rearm()
+            }
         } catch {
             ScreenTimeSupport.clearShield()
             ScreenTimeSupport.recordFailure(error)
