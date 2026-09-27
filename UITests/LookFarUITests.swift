@@ -20,7 +20,10 @@ final class LookFarUITests: XCTestCase {
         }
         tap(app.buttons["openDiagnostics"], in: app)
         XCTAssertTrue(app.staticTexts["diagnosticStatus"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["diagnosticStatus"].label.contains("Version: 0.1.0 (3)"))
+        let bundle = Bundle(for: Self.self)
+        let version = try XCTUnwrap(bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+        let build = try XCTUnwrap(bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
+        XCTAssertTrue(app.staticTexts["diagnosticStatus"].label.contains("Version: \(version) (\(build))"))
         XCTAssertTrue(app.staticTexts["diagnosticStatus"].label.contains("SIMULATOR FIXTURE"))
         tap(app.buttons["copyDiagnostics"], in: app)
         XCTAssertEqual(app.buttons["copyDiagnostics"].label, "Report copied")

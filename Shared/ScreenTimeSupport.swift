@@ -101,7 +101,7 @@ enum ScreenTimeFailure: LocalizedError {
 }
 
 enum ScreenTimeSupport {
-    static let registrationVersion = 1
+    static let registrationVersion = 2
     static let appGroup = "group.dev.local.lookfar"
     static let activityPrefix = "lookfar.cycle."
     static let thresholdEvent = DeviceActivityEvent.Name("lookfar.break-due")
@@ -112,11 +112,12 @@ enum ScreenTimeSupport {
     private static let skipsPrefix = "lookfar.shield-skip."
     private static let logger = Logger(subsystem: "dev.local.lookfar", category: "ScreenTime")
 
-    // Apple's daily schedule runs midnight to midnight: developer.apple.com/videos/play/wwdc2021/10123/.
+    // Equal start/end times resolve to tomorrow's interval on current iOS releases.
+    // Distinct daily bounds let a cycle registered during the day start immediately.
     static var allDaySchedule: DeviceActivitySchedule {
         DeviceActivitySchedule(
-            intervalStart: DateComponents(hour: 0, minute: 0),
-            intervalEnd: DateComponents(hour: 0, minute: 0),
+            intervalStart: DateComponents(hour: 0, minute: 0, second: 0),
+            intervalEnd: DateComponents(hour: 23, minute: 59, second: 59),
             repeats: true
         )
     }
@@ -209,8 +210,7 @@ enum ScreenTimeSupport {
         let events = activity.map { center.events(for: $0) }
         guard config.registrationVersion != registrationVersion
                 || schedule != allDaySchedule || events != monitoringEvents(for: config) else { return }
-        // Build 2 may have consumed and discarded today's thresholds. Register once again
-        // after the fix so those callbacks do not have to wait until the following day.
+        // Replace older registrations once, preserving any pending or active break.
         try rearm(reason: "Registration missing, outdated, or configuration changed", preservingPendingBreak: true)
     }
 
@@ -277,7 +277,10 @@ enum ScreenTimeSupport {
             // AuthorizationCenter starts at .notDetermined in each process, including extensions.
             // The app requests access; startMonitoring enforces it and throws .unauthorized.
             MonitoringDiagnostics.record("monitoring.register", "cycle=\(name.rawValue); minutes=\(config.useMinutes); allApps=\(config.monitorsAllApps); events=\(config.useMinutes); includesPastActivity=false")
-            try DeviceActivityCenter().startMonitoring(name, during: allDaySchedule, events: monitoringEvents(for: config))
+            let schedule = allDaySchedule
+            let interval = schedule.nextInterval
+            MonitoringDiagnostics.record("monitoring.interval", "start=\(interval?.start.ISO8601Format() ?? "none"); end=\(interval?.end.ISO8601Format() ?? "none"); coversNow=\(interval?.contains(.now) == true)")
+            try DeviceActivityCenter().startMonitoring(name, during: schedule, events: monitoringEvents(for: config))
             MonitoringDiagnostics.record("monitoring.registered", "cycle=\(name.rawValue)")
             try clearError()
         } catch {

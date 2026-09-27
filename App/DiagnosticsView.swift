@@ -81,10 +81,14 @@ struct DiagnosticsView: View {
                 if let name = config.activityName {
                     let activity = DeviceActivityName(name)
                     let schedule = center.schedule(for: activity)
+                    let interval = schedule?.nextInterval
                     let registered = center.events(for: activity)
                     lines += [
                         "Current cycle registered: \(activities.contains(activity))",
                         "Schedule: \(String(describing: schedule))",
+                        "Resolved interval start: \(interval?.start.ISO8601Format() ?? "none")",
+                        "Resolved interval end: \(interval?.end.ISO8601Format() ?? "none")",
+                        "Schedule covers now: \(interval?.contains(.now) == true)",
                         "Events: \(registered.count) / \(config.useMinutes) expected",
                         "Break threshold registered: \(registered[ScreenTimeSupport.thresholdEvent] != nil)"
                     ]
