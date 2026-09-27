@@ -59,12 +59,17 @@ struct SettingsView: View {
                 } header: { Text("Membership") }
 
                 Section {
+                    NavigationLink {
+                        DiagnosticsView(monitoring: store.monitoring)
+                    } label: {
+                        Label("Diagnostics", systemImage: "waveform.path.ecg")
+                    }.accessibilityIdentifier("openDiagnostics")
                     Button("Restart introduction") { store.restartOnboarding(); dismiss() }
                     Button("Delete rest history", role: .destructive) { confirmDelete = true }
                     VStack(alignment: .leading, spacing: 4) {
                         Text(Brand.name).font(AppTheme.title(23))
                         Text(Brand.subtitle).font(.footnote).foregroundStyle(AppTheme.secondary)
-                        Text("Version 0.1").font(.caption).foregroundStyle(AppTheme.secondary)
+                        Text("Version \(MonitoringDiagnostics.version)").font(.caption).foregroundStyle(AppTheme.secondary)
                     }.padding(.vertical, 6)
                 } header: { Text("About") }
             }

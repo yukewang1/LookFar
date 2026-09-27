@@ -50,7 +50,7 @@ base = {
     "CLANG_ENABLE_MODULES": "YES", "SDKROOT": "iphoneos", "IPHONEOS_DEPLOYMENT_TARGET": "26.5",
     "SWIFT_VERSION": "5.0", "TARGETED_DEVICE_FAMILY": "1", "CODE_SIGN_STYLE": "Automatic",
     "DEVELOPMENT_TEAM": "VRT5976586",
-    "MARKETING_VERSION": "0.1.0", "CURRENT_PROJECT_VERSION": "2", "ENABLE_USER_SCRIPT_SANDBOXING": "YES",
+    "MARKETING_VERSION": "0.1.0", "CURRENT_PROJECT_VERSION": "3", "ENABLE_USER_SCRIPT_SANDBOXING": "YES",
     "SWIFT_EMIT_LOC_STRINGS": "YES", "GENERATE_INFOPLIST_FILE": "YES", "PRODUCT_NAME": "$(TARGET_NAME)",
     "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator", "SUPPORTS_MACCATALYST": "NO",
     "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "NO", "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD": "NO"
@@ -92,10 +92,15 @@ for name, identifier in target_ids.items():
         sources = [ref for path, ref in refs.items() if path.startswith("UITests/")]
         sources.append(refs["Shared/ScreenTimeSupport.swift"])
         sources.append(refs["Core/UsageGapTracker.swift"])
+        sources.append(refs["Shared/MonitoringDiagnostics.swift"])
+        sources.append(refs["Core/DiagnosticLog.swift"])
+        sources.append(refs["Extensions/ActivityMonitor.swift"])
+        sources.append(refs["Core/RestCore.swift"])
+        sources.append(refs["App/ScreenTimeManager.swift"])
     elif report:
         sources = [refs[path] for path in ("Extensions/ScreenTimeReport.swift", "Shared/ScreenTimeReportContent.swift", "App/Theme.swift")]
     else:
-        sources = [refs["Shared/ScreenTimeSupport.swift"], refs["Core/UsageGapTracker.swift"], refs["Extensions/" + name + ".swift"]]
+        sources = [refs[path] for path in ("Shared/ScreenTimeSupport.swift", "Shared/MonitoringDiagnostics.swift", "Core/UsageGapTracker.swift", "Core/DiagnosticLog.swift", "Extensions/" + name + ".swift")]
     source_phase = add(name + "sources", "PBXSourcesBuildPhase", buildActionMask=2147483647,
                        files=[buildfile(name, ref) for ref in sources], runOnlyForDeploymentPostprocessing=0)
     resources = [assets, privacy] if main else [] if test else [privacy]

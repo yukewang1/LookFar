@@ -39,6 +39,7 @@ final class AppStore {
         isBreakPresented = state.activeSession != nil
             && (!state.onboardingComplete || !monitoring.isResolvingAuthorization)
         monitoring.onAuthorizationLost = { [weak self] in self?.interruptForScreenTimeDisconnect() }
+        if !isUITesting { MonitoringDiagnostics.record("app.launch", "version=\(MonitoringDiagnostics.version); os=\(ProcessInfo.processInfo.operatingSystemVersionString)") }
         reconcile()
     }
 
@@ -68,7 +69,7 @@ final class AppStore {
         persist()
         isBreakPresented = true
         if monitoring.isEnabled, let session = state.activeSession {
-            do { try monitoring.beginBreak(duration: TimeInterval(session.durationSeconds)) }
+            do { try monitoring.beginBreak(deadline: session.deadline) }
             catch { errorMessage = error.localizedDescription }
         }
         scheduleEndCue()
@@ -98,9 +99,7 @@ final class AppStore {
             }
         }
         tick()
-        if monitoring.hasPendingBreak && state.activeSession == nil && !breakCompleted {
-            showPause = true
-        }
+        presentPendingBreak()
         if persist() {
             do { try monitoring.acknowledgeSkippedBreaks(ids: Set(skips.map(\.id))) }
             catch { errorMessage = error.localizedDescription }
@@ -108,6 +107,26 @@ final class AppStore {
         Task {
             let settings = await UNUserNotificationCenter.current().notificationSettings()
             notificationPermission = settings.authorizationStatus == .authorized
+        }
+    }
+
+    func pollForPendingBreak() {
+        guard state.onboardingComplete, !monitoring.isResolvingAuthorization else { return }
+        monitoring.refreshAuthorization()
+        guard monitoring.isAuthorized else {
+            interruptForScreenTimeDisconnect()
+            return
+        }
+        monitoring.refreshPendingBreak()
+        presentPendingBreak()
+    }
+
+    private func presentPendingBreak() {
+        if !monitoring.hasPendingBreak {
+            showPause = false
+        } else if state.activeSession == nil && !breakCompleted && !showPause {
+            if !isUITesting { MonitoringDiagnostics.record("break.prompt-presented") }
+            showPause = true
         }
     }
 
@@ -140,7 +159,7 @@ final class AppStore {
         guard RestLogic.completeIfDue(&state, at: Date()) else { return }
         persist()
         breakCompleted = true
-        resetMonitoring()
+        resetMonitoring(reason: "Guided rest completed", onlyIfRestExpired: true)
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["rest-end"])
         if UIApplication.shared.applicationState == .active {
             if soundEnabled { AudioServicesPlaySystemSound(1007) }
@@ -155,7 +174,7 @@ final class AppStore {
         showPause = false
         breakCompleted = false
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["rest-end"])
-        resetMonitoring()
+        resetMonitoring(reason: "Break skipped in app")
         feedbackMessage = "Skipped. Your next cycle starts fresh."
     }
 
@@ -166,7 +185,7 @@ final class AppStore {
         showPause = false
         breakCompleted = false
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["rest-end"])
-        resetMonitoring()
+        resetMonitoring(reason: "Own break confirmed")
         feedbackMessage = "A fresh start. Your own break was noted separately."
     }
 
@@ -190,9 +209,9 @@ final class AppStore {
         persist()
     }
 
-    private func resetMonitoring() {
+    private func resetMonitoring(reason: String, onlyIfRestExpired: Bool = false) {
         guard monitoring.isEnabled else { return }
-        do { try monitoring.resetCycle(usageMinutes: monitoring.usageMinutes) }
+        do { try monitoring.resetCycle(usageMinutes: monitoring.usageMinutes, reason: reason, onlyIfRestExpired: onlyIfRestExpired) }
         catch {
             monitoring.release()
             errorMessage = "Monitoring paused and apps released because a new cycle could not start. \(error.localizedDescription)"

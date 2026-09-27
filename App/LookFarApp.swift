@@ -11,6 +11,9 @@ struct LookFarApp: App {
                 .preferredColorScheme(.dark)
                 .tint(AppTheme.sage)
                 .onChange(of: scenePhase) { _, phase in
+                    if !ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+                        MonitoringDiagnostics.record("app.scene", "\(phase)")
+                    }
                     if phase == .active {
                         store.reconcile()
                     }
@@ -21,6 +24,7 @@ struct LookFarApp: App {
 
 struct RootView: View {
     @Bindable var store: AppStore
+    @Environment(\.scenePhase) private var scenePhase
     @State private var tab = 0
     @State private var showSettings = false
 
@@ -52,6 +56,15 @@ struct RootView: View {
         .background(AppTheme.background)
         .foregroundStyle(AppTheme.cream)
         .task { await store.resolveScreenTimeAuthorization() }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                // Cancellation on backgrounding ends polling; usage still comes from iOS.
+                do { try await Task.sleep(for: .seconds(2)) }
+                catch { return }
+                if !showSettings { store.pollForPendingBreak() }
+            }
+        }
         .onChange(of: store.monitoring.isAuthorized) { _, authorized in
             if !authorized { showSettings = false }
         }

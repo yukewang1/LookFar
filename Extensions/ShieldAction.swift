@@ -15,6 +15,7 @@ final class LookFarShieldAction: ShieldActionDelegate {
     }
 
     private func respond(to action: ShieldAction, completionHandler: @escaping (ShieldActionResponse) -> Void) {
+        MonitoringDiagnostics.record("shield.action", "\(action)")
         do {
             if action == .secondaryButtonPressed {
                 try ScreenTimeSupport.skipBreak()
@@ -23,11 +24,11 @@ final class LookFarShieldAction: ShieldActionDelegate {
             }
 
             let config = try ScreenTimeSupport.load()
-            if !config.enabled || !ScreenTimeSupport.isAuthorized {
+            if !config.enabled {
                 try ScreenTimeSupport.clearPendingBreak()
                 completionHandler(.none)
             } else if let deadline = config.breakDeadline, deadline <= .now {
-                try ScreenTimeSupport.rearm()
+                try ScreenTimeSupport.rearm(reason: "Rest deadline elapsed at shield action")
                 completionHandler(.none)
             } else {
                 completionHandler(.openParentalControlsApp)
