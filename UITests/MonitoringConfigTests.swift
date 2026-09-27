@@ -43,11 +43,18 @@ final class MonitoringConfigTests: XCTestCase {
         XCTAssertEqual(restored.registrationVersion, ScreenTimeSupport.registrationVersion)
     }
 
-    func testMonitoringScheduleCoversTheWholeDay() {
+    func testMonitoringScheduleResolvesToTodayWhenRegisteredDuringTheDay() throws {
         let schedule = ScreenTimeSupport.allDaySchedule
+        let now = Date.now
+        let day = try XCTUnwrap(Calendar.current.dateInterval(of: .day, for: now))
+        // In the final second the next day's interval is expected. Avoid a clock-boundary
+        // failure without weakening the assertion for registrations during the day.
+        try XCTSkipIf(day.end.timeIntervalSince(now) < 2, "Daily interval is rolling over")
+        let interval = try XCTUnwrap(schedule.nextInterval)
 
-        XCTAssertEqual(schedule.intervalStart, DateComponents(hour: 0, minute: 0))
-        XCTAssertEqual(schedule.intervalEnd, DateComponents(hour: 0, minute: 0))
+        XCTAssertEqual(interval.start, day.start)
+        XCTAssertEqual(interval.end, day.end.addingTimeInterval(-1))
+        XCTAssertTrue(interval.contains(now), "A registration during the day must not wait until tomorrow")
         XCTAssertTrue(schedule.repeats)
     }
 
