@@ -24,6 +24,7 @@ final class ScreenTimeManager {
     private let authorizationFixture = AuthorizationFixture.current
     @ObservationIgnored private var foregroundObserver: AnyCancellable?
     @ObservationIgnored private var fixtureHasBackgrounded = false
+    @ObservationIgnored private var fixturePendingBreakAt: Date?
     #endif
 
     var isUsingTestAuthorization: Bool {
@@ -46,6 +47,9 @@ final class ScreenTimeManager {
             isAuthorized = authorizationFixture == .approved || authorizationFixture == .revokedOnForeground
             isEnabled = isAuthorized
             hasPendingBreak = isAuthorized && ProcessInfo.processInfo.arguments.contains("--ui-testing-pending-break")
+            if ProcessInfo.processInfo.arguments.contains("--ui-testing-delayed-break") {
+                fixturePendingBreakAt = Date.now.addingTimeInterval(5)
+            }
             isResolvingAuthorization = authorizationFixture == .restoringApproved
             if authorizationFixture == .revokedOnForeground {
                 foregroundObserver = NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
@@ -103,6 +107,7 @@ final class ScreenTimeManager {
             errorMessage = ScreenTimeFailure.simulator.localizedDescription
             return
         }
+        MonitoringDiagnostics.record("authorization.request")
         do {
             try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
             try ScreenTimeSupport.clearError()
@@ -110,6 +115,7 @@ final class ScreenTimeManager {
             report(error)
         }
         isResolvingAuthorization = false
+        MonitoringDiagnostics.record("authorization.result", "\(AuthorizationCenter.shared.authorizationStatus)")
         refresh()
     }
 
@@ -119,7 +125,7 @@ final class ScreenTimeManager {
             var config = try ScreenTimeSupport.load()
             config.selection = selection
             try ScreenTimeSupport.save(config)
-            if config.enabled { try ScreenTimeSupport.rearm() }
+            if config.enabled { try ScreenTimeSupport.rearm(reason: "App selection changed") }
             refresh()
         } catch {
             refresh()
@@ -144,7 +150,7 @@ final class ScreenTimeManager {
             config.useMinutes = usageMinutes
             config.restSeconds = restSeconds
             try ScreenTimeSupport.save(config)
-            if config.enabled { try ScreenTimeSupport.rearm(preservingPendingBreak: true) }
+            if config.enabled { try ScreenTimeSupport.rearm(reason: "Break timing changed", preservingPendingBreak: true) }
             refresh()
         } catch {
             refresh()
@@ -154,12 +160,13 @@ final class ScreenTimeManager {
     }
 
     func setEnabled(_ enabled: Bool, usageMinutes: Int) throws {
+        refreshAuthorization()
+        if enabled && (isResolvingAuthorization || !isAuthorized) {
+            let error = ScreenTimeFailure.notAuthorized
+            report(error)
+            throw error
+        }
         if isUsingTestAuthorization {
-            if enabled && !isAuthorized {
-                let error = ScreenTimeFailure.notAuthorized
-                report(error)
-                throw error
-            }
             isEnabled = enabled
             hasPendingBreak = false
             errorMessage = nil
@@ -171,7 +178,7 @@ final class ScreenTimeManager {
                 config.selection = selection
                 config.enabled = true
                 try ScreenTimeSupport.save(config)
-                try ScreenTimeSupport.rearm(useMinutes: usageMinutes)
+                try ScreenTimeSupport.rearm(reason: "Automatic pauses enabled", useMinutes: usageMinutes)
             } else {
                 try ScreenTimeSupport.stop()
                 try ScreenTimeSupport.clearError()
@@ -188,21 +195,23 @@ final class ScreenTimeManager {
         if isUsingTestAuthorization { return }
         do {
             var config = try ScreenTimeSupport.load()
-            config.breakDeadline = Date.now.addingTimeInterval(duration)
+            let deadline = Date.now.addingTimeInterval(duration)
+            config.breakDeadline = deadline
             try ScreenTimeSupport.save(config)
+            MonitoringDiagnostics.record("break.started", "duration=\(duration); deadline=\(deadline.ISO8601Format())")
         } catch {
             report(error)
             throw error
         }
     }
 
-    func resetCycle(usageMinutes: Int) throws {
+    func resetCycle(usageMinutes: Int, reason: String, onlyIfRestExpired: Bool = false) throws {
         if isUsingTestAuthorization {
             hasPendingBreak = false
             return
         }
         do {
-            try ScreenTimeSupport.rearm(useMinutes: usageMinutes)
+            try ScreenTimeSupport.rearm(reason: reason, useMinutes: usageMinutes, onlyIfRestExpired: onlyIfRestExpired)
             refresh()
         } catch {
             refresh()
@@ -262,7 +271,7 @@ final class ScreenTimeManager {
             try ScreenTimeSupport.upgradeMonitoringIfNeeded()
             config = try ScreenTimeSupport.load()
             if let deadline = config.breakDeadline, deadline <= .now {
-                try ScreenTimeSupport.rearm()
+                try ScreenTimeSupport.rearm(reason: "Rest deadline elapsed on app refresh")
                 config = try ScreenTimeSupport.load()
             }
             selection = config.selection
@@ -277,6 +286,25 @@ final class ScreenTimeManager {
             hasPendingBreak = false
             report(error)
         }
+    }
+
+    /// Read extension state without re-registering or resetting the usage cycle.
+    func refreshPendingBreak() {
+        #if DEBUG
+        if isUsingTestAuthorization {
+            if let fixturePendingBreakAt, fixturePendingBreakAt <= .now, isEnabled {
+                hasPendingBreak = true
+                self.fixturePendingBreakAt = nil
+            }
+            return
+        }
+        #endif
+        do {
+            let config = try ScreenTimeSupport.load()
+            isEnabled = config.enabled
+            hasPendingBreak = config.enabled && config.pendingBreak
+            errorMessage = try ScreenTimeSupport.lastError()
+        } catch { report(error) }
     }
 
     func pendingSkippedBreaks() throws -> [ShieldSkipEvent] {

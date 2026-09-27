@@ -3,6 +3,30 @@ import XCTest
 final class LookFarUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    @MainActor func testBreakArrivingWhileAppRemainsOpenIsPresented() throws {
+        let app = launch(skipOnboarding: true, extraArguments: ["--ui-testing-delayed-break"])
+        XCTAssertTrue(app.staticTexts["treeCount"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["pauseStart"].waitForExistence(timeout: 12))
+        attach(app, "foreground-break-prompt")
+        tap(app.buttons["pauseSkip"], in: app)
+        XCTAssertTrue(app.staticTexts["treeCount"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor func testDiagnosticsAreReachableAndReportCanBeCopied() throws {
+        let app = launch(skipOnboarding: true)
+        tap(app.buttons["Settings"], in: app)
+        for _ in 0..<6 where !app.buttons["openDiagnostics"].isHittable {
+            app.collectionViews.firstMatch.swipeUp()
+        }
+        tap(app.buttons["openDiagnostics"], in: app)
+        XCTAssertTrue(app.staticTexts["diagnosticStatus"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["diagnosticStatus"].label.contains("Version: 0.1.0 (3)"))
+        XCTAssertTrue(app.staticTexts["diagnosticStatus"].label.contains("SIMULATOR FIXTURE"))
+        tap(app.buttons["copyDiagnostics"], in: app)
+        XCTAssertEqual(app.buttons["copyDiagnostics"].label, "Report copied")
+        attach(app, "monitoring-diagnostics")
+    }
+
     @MainActor func testOnboardingPlantsFirstTreeAndOpensHistory() throws {
         let app = launch(fullRest: true, screenTime: .notDetermined)
         XCTAssertTrue(app.staticTexts["Build a habit\nfor your eyes."].waitForExistence(timeout: 5))

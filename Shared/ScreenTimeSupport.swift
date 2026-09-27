@@ -31,6 +31,7 @@ struct MonitoringConfig: Codable {
     var pendingBreak = false
     var breakDeadline: Date?
     var activityName: String?
+    var registrationVersion = 0
 
     var monitorsAllApps: Bool {
         selection.applicationTokens.isEmpty && selection.categoryTokens.isEmpty
@@ -38,7 +39,7 @@ struct MonitoringConfig: Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case selection, useMinutes, restSeconds, enabled, pendingBreak, breakDeadline, activityName
+        case selection, useMinutes, restSeconds, enabled, pendingBreak, breakDeadline, activityName, registrationVersion
     }
 
     init() {}
@@ -52,6 +53,7 @@ struct MonitoringConfig: Codable {
         pendingBreak = try container.decode(Bool.self, forKey: .pendingBreak)
         breakDeadline = try container.decodeIfPresent(Date.self, forKey: .breakDeadline)
         activityName = try container.decodeIfPresent(String.self, forKey: .activityName)
+        registrationVersion = try container.decodeIfPresent(Int.self, forKey: .registrationVersion) ?? 0
     }
 
     enum CheckpointAction {
@@ -99,6 +101,7 @@ enum ScreenTimeFailure: LocalizedError {
 }
 
 enum ScreenTimeSupport {
+    static let registrationVersion = 1
     static let appGroup = "group.dev.local.lookfar"
     static let activityPrefix = "lookfar.cycle."
     static let thresholdEvent = DeviceActivityEvent.Name("lookfar.break-due")
@@ -124,12 +127,6 @@ enum ScreenTimeSupport {
         #else
         true
         #endif
-    }
-
-    static var isAuthorized: Bool {
-        guard isAvailable else { return false }
-        let status = AuthorizationCenter.shared.authorizationStatus
-        return status == .approved || status == .approvedWithDataAccess
     }
 
     private static func defaults() throws -> UserDefaults {
@@ -170,6 +167,8 @@ enum ScreenTimeSupport {
 
     static func recordFailure(_ error: Error) {
         logger.error("\(error.localizedDescription, privacy: .public)")
+        let nsError = error as NSError
+        MonitoringDiagnostics.record("error", "\(nsError.domain) (\(nsError.code)): \(error.localizedDescription)")
         // Keep the error readable even when the encoded configuration cannot be decoded.
         UserDefaults(suiteName: appGroup)?.set(error.localizedDescription, forKey: errorKey)
     }
@@ -178,6 +177,7 @@ enum ScreenTimeSupport {
 
     static func clearShield() {
         guard isAvailable else { return }
+        MonitoringDiagnostics.record("shield.clear")
         ManagedSettingsStore(named: .init("lookfar.break")).clearAllSettings()
     }
 
@@ -188,6 +188,7 @@ enum ScreenTimeSupport {
     }
 
     static func stop() throws {
+        MonitoringDiagnostics.record("monitoring.stop")
         clearShield()
         defer { stopActivities() }
         var config = try load()
@@ -206,8 +207,11 @@ enum ScreenTimeSupport {
         let activity = config.activityName.map { DeviceActivityName($0) }
         let schedule = activity.flatMap { center.schedule(for: $0) }
         let events = activity.map { center.events(for: $0) }
-        guard schedule != allDaySchedule || events != monitoringEvents(for: config) else { return }
-        try rearm(preservingPendingBreak: true)
+        guard config.registrationVersion != registrationVersion
+                || schedule != allDaySchedule || events != monitoringEvents(for: config) else { return }
+        // Build 2 may have consumed and discarded today's thresholds. Register once again
+        // after the fix so those callbacks do not have to wait until the following day.
+        try rearm(reason: "Registration missing, outdated, or configuration changed", preservingPendingBreak: true)
     }
 
     static func monitoringEvents(for config: MonitoringConfig) -> [DeviceActivityEvent.Name: DeviceActivityEvent] {
@@ -234,8 +238,13 @@ enum ScreenTimeSupport {
         return minute
     }
 
-    static func rearm(useMinutes: Int? = nil, preservingPendingBreak: Bool = false, afterCheckpointIn activity: DeviceActivityName? = nil) throws {
+    static func rearm(reason: String, useMinutes: Int? = nil, preservingPendingBreak: Bool = false, afterCheckpointIn activity: DeviceActivityName? = nil, onlyIfRestExpired: Bool = false) throws {
         var config = try load()
+        if onlyIfRestExpired {
+            // An extension may already have finished this rest and started the next cycle.
+            // Completing the older local session must not erase new usage or a new prompt.
+            guard let deadline = config.breakDeadline, deadline <= .now else { return }
+        }
         if let activity {
             guard config.enabled, config.activityName == activity.rawValue else { return }
             if let deadline = config.breakDeadline {
@@ -244,6 +253,7 @@ enum ScreenTimeSupport {
                 return
             }
         }
+        MonitoringDiagnostics.record("cycle.rearm", "\(reason); previous=\(config.activityName ?? "none"); preserveBreak=\(preservingPendingBreak)")
         if !preservingPendingBreak { clearShield() }
         if let useMinutes { config.useMinutes = useMinutes }
         if !preservingPendingBreak {
@@ -252,18 +262,23 @@ enum ScreenTimeSupport {
         }
         config.activityName = nil
         try save(config)
+        MonitoringDiagnostics.record("monitoring.stop-existing")
         stopActivities()
 
         guard config.enabled else { return }
         do {
             guard isAvailable else { throw ScreenTimeFailure.simulator }
-            guard isAuthorized else { throw ScreenTimeFailure.notAuthorized }
             guard config.useMinutes > 0 else { throw ScreenTimeFailure.invalidInterval }
             let name = DeviceActivityName(activityPrefix + UUID().uuidString)
             config.activityName = name.rawValue
+            config.registrationVersion = registrationVersion
             // Persist the generation before registration: callbacks can arrive immediately.
             try save(config)
+            // AuthorizationCenter starts at .notDetermined in each process, including extensions.
+            // The app requests access; startMonitoring enforces it and throws .unauthorized.
+            MonitoringDiagnostics.record("monitoring.register", "cycle=\(name.rawValue); minutes=\(config.useMinutes); allApps=\(config.monitorsAllApps); events=\(config.useMinutes); includesPastActivity=false")
             try DeviceActivityCenter().startMonitoring(name, during: allDaySchedule, events: monitoringEvents(for: config))
+            MonitoringDiagnostics.record("monitoring.registered", "cycle=\(name.rawValue)")
             try clearError()
         } catch {
             clearShield()
@@ -279,6 +294,8 @@ enum ScreenTimeSupport {
     }
 
     static func applyShield(for config: MonitoringConfig) {
+        MonitoringDiagnostics.record("shield.apply", "cycle=\(config.activityName ?? "none"); allApps=\(config.monitorsAllApps)")
+        guard isAvailable else { return }
         let store = ManagedSettingsStore(named: .init("lookfar.break"))
         if config.monitorsAllApps {
             store.shield.applications = nil
@@ -294,6 +311,7 @@ enum ScreenTimeSupport {
     }
 
     static func clearPendingBreak() throws {
+        MonitoringDiagnostics.record("break.clear-pending")
         clearShield()
         var config = try load()
         config.pendingBreak = false
@@ -309,7 +327,7 @@ enum ScreenTimeSupport {
         let data = try JSONEncoder().encode(event)
         // Separate keys let the app acknowledge an older batch without overwriting a new skip.
         defaults.set(data, forKey: skipsPrefix + event.id.uuidString)
-        try rearm()
+        try rearm(reason: "Skipped from shield")
     }
 
     static func pendingSkippedBreaks() throws -> [ShieldSkipEvent] {

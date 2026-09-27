@@ -9,6 +9,7 @@ final class LookFarShieldConfiguration: ShieldConfigurationDataSource {
     override func configuration(shielding webDomain: WebDomain, in category: ActivityCategory) -> ShieldConfiguration { makeConfiguration() }
 
     private func makeConfiguration() -> ShieldConfiguration {
+        MonitoringDiagnostics.record("shield.render")
         let ink = UIColor(red: 0.13, green: 0.21, blue: 0.18, alpha: 1)
         let paper = UIColor(red: 0.97, green: 0.96, blue: 0.93, alpha: 1)
         let subtitle: String

@@ -12,6 +12,7 @@ final class MonitoringConfigTests: XCTestCase {
         original.activityName = "lookfar.cycle.legacy"
         var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
         legacy.removeValue(forKey: "restSeconds")
+        legacy.removeValue(forKey: "registrationVersion")
         legacy["startHour"] = 8
         legacy["endHour"] = 22
 
@@ -23,6 +24,7 @@ final class MonitoringConfigTests: XCTestCase {
         XCTAssertTrue(restored.pendingBreak)
         XCTAssertEqual(restored.breakDeadline, deadline)
         XCTAssertEqual(restored.activityName, "lookfar.cycle.legacy")
+        XCTAssertNotEqual(restored.registrationVersion, ScreenTimeSupport.registrationVersion)
         let migrated = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(restored)) as? [String: Any])
         XCTAssertNil(migrated["startHour"])
         XCTAssertNil(migrated["endHour"])
@@ -32,11 +34,13 @@ final class MonitoringConfigTests: XCTestCase {
         var original = MonitoringConfig()
         original.useMinutes = 30
         original.restSeconds = 10
+        original.registrationVersion = ScreenTimeSupport.registrationVersion
 
         let restored = try JSONDecoder().decode(MonitoringConfig.self, from: JSONEncoder().encode(original))
 
         XCTAssertEqual(restored.useMinutes, 30)
         XCTAssertEqual(restored.restSeconds, 10)
+        XCTAssertEqual(restored.registrationVersion, ScreenTimeSupport.registrationVersion)
     }
 
     func testMonitoringScheduleCoversTheWholeDay() {
@@ -112,6 +116,7 @@ final class MonitoringConfigTests: XCTestCase {
                 XCTAssertEqual(event.categories, config.selection.categoryTokens)
                 XCTAssertEqual(event.webDomains, config.selection.webDomainTokens)
                 XCTAssertFalse(event.includesPastActivity)
+                XCTAssertTrue(event.includesAllActivity)
                 XCTAssertEqual(ScreenTimeSupport.usageMinutes(for: name, limit: limit), minute)
             }
             XCTAssertNil(events[DeviceActivityEvent.Name("lookfar.usage-minute.\(limit)")])
