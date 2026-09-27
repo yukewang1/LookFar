@@ -95,6 +95,8 @@ for name, identifier in target_ids.items():
         sources.append(refs["Shared/MonitoringDiagnostics.swift"])
         sources.append(refs["Core/DiagnosticLog.swift"])
         sources.append(refs["Extensions/ActivityMonitor.swift"])
+        sources.append(refs["Core/RestCore.swift"])
+        sources.append(refs["App/ScreenTimeManager.swift"])
     elif report:
         sources = [refs[path] for path in ("Extensions/ScreenTimeReport.swift", "Shared/ScreenTimeReportContent.swift", "App/Theme.swift")]
     else:

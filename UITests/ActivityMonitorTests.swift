@@ -76,5 +76,24 @@ final class ActivityMonitorTests: XCTestCase {
         XCTAssertEqual(current.activityName, config.activityName)
         XCTAssertEqual(current.breakDeadline, config.breakDeadline)
     }
+
+    @MainActor func testDelayedBreakRegistrationUsesLocalSessionsExactDeadline() throws {
+        let manager = ScreenTimeManager()
+        config.pendingBreak = true
+        try ScreenTimeSupport.save(config)
+        var state = RestState()
+        // Register after the session has already elapsed to model a delayed persistence step.
+        RestLogic.start(&state, at: Date.now.addingTimeInterval(-30), durationOverride: 20)
+        let session = try XCTUnwrap(state.activeSession)
+
+        try manager.beginBreak(deadline: session.deadline)
+
+        var shared = try ScreenTimeSupport.load()
+        XCTAssertEqual(shared.breakDeadline, session.deadline)
+        XCTAssertTrue(shared.pendingBreak)
+        XCTAssertTrue(RestLogic.completeIfDue(&state, at: session.deadline))
+        var tracker = UsageGapTracker()
+        XCTAssertEqual(shared.recordUsageCheckpoint(minutes: shared.useMinutes, at: session.deadline, tracker: &tracker), .restart)
+    }
 }
 #endif

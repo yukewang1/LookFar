@@ -69,7 +69,7 @@ final class AppStore {
         persist()
         isBreakPresented = true
         if monitoring.isEnabled, let session = state.activeSession {
-            do { try monitoring.beginBreak(duration: TimeInterval(session.durationSeconds)) }
+            do { try monitoring.beginBreak(deadline: session.deadline) }
             catch { errorMessage = error.localizedDescription }
         }
         scheduleEndCue()

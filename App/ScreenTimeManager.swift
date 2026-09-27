@@ -191,14 +191,15 @@ final class ScreenTimeManager {
         }
     }
 
-    func beginBreak(duration: TimeInterval) throws {
+    func beginBreak(deadline: Date) throws {
         if isUsingTestAuthorization { return }
         do {
             var config = try ScreenTimeSupport.load()
-            let deadline = Date.now.addingTimeInterval(duration)
+            // Use the saved session's deadline even if persisting the session took time.
+            // A later deadline could leave the shield active after the local timer finishes.
             config.breakDeadline = deadline
             try ScreenTimeSupport.save(config)
-            MonitoringDiagnostics.record("break.started", "duration=\(duration); deadline=\(deadline.ISO8601Format())")
+            MonitoringDiagnostics.record("break.started", "deadline=\(deadline.ISO8601Format())")
         } catch {
             report(error)
             throw error
