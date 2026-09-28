@@ -2,7 +2,7 @@ import SwiftUI
 import FamilyControls
 
 struct SettingsView: View {
-    @Bindable var store: AppStore
+    let store: AppStore
     @Environment(\.dismiss) private var dismiss
     @State private var showPicker = false
     @State private var showPaywall = false

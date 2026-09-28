@@ -129,5 +129,22 @@ final class ActivityMonitorTests: XCTestCase {
         var tracker = UsageGapTracker()
         XCTAssertEqual(shared.recordUsageCheckpoint(minutes: shared.useMinutes, at: session.deadline, tracker: &tracker), .restart)
     }
+
+    @MainActor func testCycleResetUsesSavedTimingInsteadOfManagersCachedTiming() throws {
+        let manager = ScreenTimeManager()
+        XCTAssertEqual(manager.usageMinutes, 5)
+        config.enabled = false // Exercise persistence without real Simulator monitoring.
+        config.useMinutes = 30
+        config.restSeconds = 10
+        try ScreenTimeSupport.save(config)
+
+        try manager.resetCycle(reason: "Rest completed after preferences changed")
+
+        let saved = try ScreenTimeSupport.load()
+        XCTAssertEqual(saved.useMinutes, 30)
+        XCTAssertEqual(saved.restSeconds, 10)
+        XCTAssertEqual(manager.usageMinutes, 30)
+        XCTAssertEqual(manager.restSeconds, 10)
+    }
 }
 #endif

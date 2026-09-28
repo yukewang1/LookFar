@@ -16,8 +16,8 @@ final class ScreenTimeManager {
     private(set) var isResolvingAuthorization = false
     private(set) var isEnabled = false
     private(set) var hasPendingBreak = false
-    private(set) var usageMinutes = 20
-    private(set) var restSeconds = 20
+    private(set) var usageMinutes = RestSchedule.usageMinutes
+    private(set) var restSeconds = RestSchedule.restSeconds
     var errorMessage: String?
     @ObservationIgnored private var authorizationObserver: AnyCancellable?
     #if DEBUG
@@ -109,7 +109,6 @@ final class ScreenTimeManager {
         if let authorizationFixture {
             isAuthorized = authorizationFixture != .denied
             isResolvingAuthorization = false
-            if authorizationFixture == .restoringApproved { isEnabled = true }
             errorMessage = isAuthorized ? nil : "Screen Time access was denied. Allow access to continue."
             refresh()
             return
@@ -186,13 +185,13 @@ final class ScreenTimeManager {
         }
     }
 
-    func resetCycle(usageMinutes: Int, reason: String, onlyIfRestExpired: Bool = false) throws {
+    func resetCycle(reason: String, onlyIfRestExpired: Bool = false) throws {
         if isUsingTestAuthorization {
             hasPendingBreak = false
             return
         }
         do {
-            try ScreenTimeSupport.rearm(reason: reason, useMinutes: usageMinutes, onlyIfRestExpired: onlyIfRestExpired)
+            try ScreenTimeSupport.rearm(reason: reason, onlyIfRestExpired: onlyIfRestExpired)
             refresh()
         } catch {
             refresh()
@@ -202,20 +201,16 @@ final class ScreenTimeManager {
     }
 
     func stopAfterFailure() {
+        isEnabled = false
+        hasPendingBreak = false
         if isUsingTestAuthorization {
-            isEnabled = false
-            hasPendingBreak = false
             errorMessage = nil
             return
         }
         do {
             try ScreenTimeSupport.stop()
-            isEnabled = false
-            hasPendingBreak = false
         } catch {
             ScreenTimeSupport.clearShield()
-            isEnabled = false
-            hasPendingBreak = false
             report(error)
         }
     }

@@ -25,8 +25,8 @@ struct UsageCheckpointState: Codable {
 
 struct MonitoringConfig: Codable {
     var selection = FamilyActivitySelection()
-    var useMinutes = 20
-    var restSeconds = 20
+    var useMinutes = RestSchedule.usageMinutes
+    var restSeconds = RestSchedule.restSeconds
     var enabled = false
     var pendingBreak = false
     var breakDeadline: Date?
@@ -48,7 +48,7 @@ struct MonitoringConfig: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         selection = try container.decode(FamilyActivitySelection.self, forKey: .selection)
         useMinutes = try container.decode(Int.self, forKey: .useMinutes)
-        restSeconds = try container.decodeIfPresent(Int.self, forKey: .restSeconds) ?? 20
+        restSeconds = try container.decodeIfPresent(Int.self, forKey: .restSeconds) ?? RestSchedule.restSeconds
         enabled = try container.decode(Bool.self, forKey: .enabled)
         pendingBreak = try container.decode(Bool.self, forKey: .pendingBreak)
         breakDeadline = try container.decodeIfPresent(Date.self, forKey: .breakDeadline)
@@ -239,7 +239,7 @@ enum ScreenTimeSupport {
         return minute
     }
 
-    static func rearm(reason: String, useMinutes: Int? = nil, preservingPendingBreak: Bool = false, afterCheckpointIn activity: DeviceActivityName? = nil, onlyIfRestExpired: Bool = false) throws {
+    static func rearm(reason: String, preservingPendingBreak: Bool = false, afterCheckpointIn activity: DeviceActivityName? = nil, onlyIfRestExpired: Bool = false) throws {
         var config = try load()
         if onlyIfRestExpired {
             // An extension may already have finished this rest and started the next cycle.
@@ -256,7 +256,6 @@ enum ScreenTimeSupport {
         }
         MonitoringDiagnostics.record("cycle.rearm", "\(reason); previous=\(config.activityName ?? "none"); preserveBreak=\(preservingPendingBreak)")
         if !preservingPendingBreak { clearShield() }
-        if let useMinutes { config.useMinutes = useMinutes }
         if !preservingPendingBreak {
             config.pendingBreak = false
             config.breakDeadline = nil
@@ -373,7 +372,8 @@ enum ScreenTimeSupport {
             }
             sessions.append(session)
         }
-        return sessions.sorted { $0.startedAt < $1.startedAt }
+        // RestLogic orders handoffs when importing them into the app's history.
+        return sessions
     }
 
     static func acknowledgeStartedRests(ids: Set<UUID>) throws {

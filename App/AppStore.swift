@@ -11,7 +11,6 @@ final class AppStore {
     var breakCompleted = false
     var showPause = false
     var errorMessage: String?
-    var feedbackMessage: String?
     var soundEnabled = true
     let monitoring = ScreenTimeManager()
 
@@ -48,10 +47,6 @@ final class AppStore {
         reconcile()
     }
 
-    var todayCount: Int {
-        state.records.filter { $0.kind == .guided && Calendar.current.isDateInToday($0.date) }.count
-    }
-
     func finishOnboarding() {
         state.onboardingComplete = true
         persist()
@@ -60,7 +55,6 @@ final class AppStore {
     func startBreak(isOnboardingTrial: Bool = false) {
         monitoring.refreshAuthorization()
         guard !state.onboardingComplete || (!monitoring.isResolvingAuthorization && monitoring.isAuthorized) else { return }
-        feedbackMessage = nil
         breakCompleted = false
         showPause = false
         let useShortTimer = isUITesting && !ProcessInfo.processInfo.arguments.contains("--ui-testing-full-rest")
@@ -112,7 +106,6 @@ final class AppStore {
         tick()
         if monitoring.isAuthorized,
            RestLogic.restoreStartedRests(&state, sessions: starts, at: .now) {
-            feedbackMessage = nil
             showPause = false
             breakCompleted = state.activeSession == nil
             isBreakPresented = true
@@ -188,7 +181,6 @@ final class AppStore {
         showPause = false
         breakCompleted = false
         resetMonitoring(reason: "Break skipped in app")
-        feedbackMessage = "Skipped. Your next cycle starts fresh."
     }
 
     func confirmOwnBreak() {
@@ -198,7 +190,6 @@ final class AppStore {
         showPause = false
         breakCompleted = false
         resetMonitoring(reason: "Own break confirmed")
-        feedbackMessage = "A fresh start. Your own break was noted separately."
     }
 
     func dismissCompletedBreak() {
@@ -218,7 +209,7 @@ final class AppStore {
 
     private func resetMonitoring(reason: String, onlyIfRestExpired: Bool = false) {
         guard monitoring.isEnabled else { return }
-        do { try monitoring.resetCycle(usageMinutes: monitoring.usageMinutes, reason: reason, onlyIfRestExpired: onlyIfRestExpired) }
+        do { try monitoring.resetCycle(reason: reason, onlyIfRestExpired: onlyIfRestExpired) }
         catch {
             monitoring.stopAfterFailure()
             errorMessage = "Monitoring paused and apps released because a new cycle could not start. \(error.localizedDescription)"
