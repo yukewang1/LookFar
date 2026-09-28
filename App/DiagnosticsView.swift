@@ -64,7 +64,7 @@ struct DiagnosticsView: View {
             let config = try ScreenTimeSupport.load()
             lines += [
                 "Shared preferences: readable",
-                "Automatic pauses: \(config.enabled)",
+                "Break reminders: \(config.enabled)",
                 "Timing: \(config.useMinutes) min / \(config.restSeconds) sec",
                 "Scope: \(config.monitorsAllApps ? "All eligible apps" : "Custom selection")",
                 "Selection counts: \(config.selection.applicationTokens.count) apps, \(config.selection.categoryTokens.count) categories, \(config.selection.webDomainTokens.count) domains",

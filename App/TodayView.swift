@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TodayView: View {
-    @Bindable var store: AppStore
+    let store: AppStore
     let openSettings: () -> Void
     let openProgress: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -66,11 +66,11 @@ struct TodayView: View {
                             HStack(alignment: .top, spacing: 10) {
                                 Image(systemName: store.monitoring.isEnabled ? "checkmark.shield" : "clock")
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(store.monitoring.isEnabled ? "Automatic breaks are on" : "Set up automatic breaks")
+                                    Text(store.monitoring.isEnabled ? "Break reminders are on" : "Break reminders need attention")
                                         .font(.subheadline.weight(.medium))
                                     Text(store.monitoring.isEnabled
                                          ? "A gentle pause after \(store.monitoring.usageMinutes) minutes of screen use, any time of day or night."
-                                         : "Connect Screen Time to make room for regular breaks.")
+                                         : "Open Settings to check what needs attention.")
                                         .font(.caption).foregroundStyle(AppTheme.secondary)
                                 }
                                 Spacer(minLength: 0)

@@ -2,7 +2,7 @@ import SwiftUI
 import FamilyControls
 
 struct SettingsView: View {
-    @Bindable var store: AppStore
+    let store: AppStore
     @Environment(\.dismiss) private var dismiss
     @State private var showPicker = false
     @State private var showPaywall = false
@@ -22,34 +22,20 @@ struct SettingsView: View {
                         }
                     }.accessibilityIdentifier("editRhythm")
                     Toggle("End sound", isOn: Binding(get: { store.soundEnabled }, set: { store.setSound($0) }))
-                    Button(store.notificationPermission ? "End notifications are enabled" : "Enable end notifications") {
-                        Task { await store.requestNotifications() }
-                    }.disabled(store.notificationPermission)
                 } header: { Text("Your rhythm") }
 
                 Section {
                     if store.monitoring.isAvailable {
-                        Button(store.monitoring.isAuthorized ? "Screen Time connected" : "Connect Screen Time") {
-                            Task { await store.monitoring.requestAuthorization() }
-                        }.disabled(store.monitoring.isAuthorized)
                         Button("Customize apps") { showPicker = true }.disabled(!store.monitoring.isAuthorized)
-                        Text("All eligible apps are included by default. Choose specific apps to narrow the scope; clear your selection to include everything again.")
-                            .font(.footnote).foregroundStyle(AppTheme.secondary)
-                        Toggle("Automatic app pauses", isOn: Binding(get: { store.monitoring.isEnabled }, set: { enabled in
-                            do { try store.monitoring.setEnabled(enabled, usageMinutes: store.monitoring.usageMinutes) }
-                            catch { store.errorMessage = error.localizedDescription }
-                        })).disabled(!store.monitoring.isAuthorized)
-                        Text("Runs 24/7. You can skip any break when it appears.")
-                            .font(.footnote).foregroundStyle(AppTheme.secondary)
+                            .accessibilityIdentifier("customizeApps")
                     } else {
                         Label("Physical iPhone required", systemImage: "iphone")
                         Text("Screen Time access requires a physical iPhone.")
                             .font(.footnote).foregroundStyle(AppTheme.secondary)
                     }
                     if let error = store.monitoring.errorMessage { Text(error).font(.footnote).foregroundStyle(.orange) }
-                    Button("Release apps & stop monitoring") { store.monitoring.release() }
-                } header: { Text("Automatic pauses") } footer: {
-                    Text("We estimate gaps in monitored app use and restart after about 5 minutes away. Using unselected apps can count as a gap. Today’s total still includes all eligible apps.")
+                } header: { Text("Break reminders") } footer: {
+                    Text("Reminders run all day. All eligible apps are included unless you choose specific apps. You can skip any break.")
                 }
 
                 Section {
@@ -64,7 +50,6 @@ struct SettingsView: View {
                     } label: {
                         Label("Diagnostics", systemImage: "waveform.path.ecg")
                     }.accessibilityIdentifier("openDiagnostics")
-                    Button("Restart introduction") { store.restartOnboarding(); dismiss() }
                     Button("Delete rest history", role: .destructive) { confirmDelete = true }
                     VStack(alignment: .leading, spacing: 4) {
                         Text(Brand.name).font(AppTheme.title(23))

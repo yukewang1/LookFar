@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 struct BreakView: View {
-    @Bindable var store: AppStore
+    let store: AppStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var now = Date()
 
@@ -17,7 +17,7 @@ struct BreakView: View {
                     Text(store.breakCompleted ? "One rest. One new tree." : cue)
                         .font(.body).foregroundStyle(AppTheme.secondary)
                         .multilineTextAlignment(.center)
-                    RestHorizonView(isComplete: store.breakCompleted, isResting: true)
+                    RestHorizonView(isComplete: store.breakCompleted)
                         .frame(height: min(270, geometry.size.height * 0.45))
                     if !store.breakCompleted, let session = store.state.activeSession {
                         let remaining = RestLogic.remainingSeconds(session, at: now)
@@ -84,9 +84,8 @@ struct BreakView: View {
     }
 }
 
-struct RestHorizonView: View {
+private struct RestHorizonView: View {
     let isComplete: Bool
-    let isResting: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expanded = false
 
@@ -126,18 +125,18 @@ struct RestHorizonView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
-            .animation(reduceMotion || !isResting || isComplete ? nil : .easeInOut(duration: 4).repeatForever(autoreverses: true), value: expanded)
+            .animation(reduceMotion || isComplete ? nil : .easeInOut(duration: 4).repeatForever(autoreverses: true), value: expanded)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.7), value: isComplete)
         }
         .accessibilityHidden(true)
-        .onAppear { expanded = isResting && !reduceMotion }
-        .onChange(of: reduceMotion) { _, reduced in expanded = isResting && !reduced }
+        .onAppear { expanded = !reduceMotion }
+        .onChange(of: reduceMotion) { _, reduced in expanded = !reduced }
         .onChange(of: isComplete) { _, completed in if completed { expanded = false } }
     }
 }
 
 struct PauseView: View {
-    @Bindable var store: AppStore
+    let store: AppStore
 
     var body: some View {
         ScrollView {

@@ -16,8 +16,8 @@ final class ScreenTimeManager {
     private(set) var isResolvingAuthorization = false
     private(set) var isEnabled = false
     private(set) var hasPendingBreak = false
-    private(set) var usageMinutes = 20
-    private(set) var restSeconds = 20
+    private(set) var usageMinutes = RestSchedule.usageMinutes
+    private(set) var restSeconds = RestSchedule.restSeconds
     var errorMessage: String?
     @ObservationIgnored private var authorizationObserver: AnyCancellable?
     #if DEBUG
@@ -25,6 +25,7 @@ final class ScreenTimeManager {
     @ObservationIgnored private var foregroundObserver: AnyCancellable?
     @ObservationIgnored private var fixtureHasBackgrounded = false
     @ObservationIgnored private var fixturePendingBreakAt: Date?
+    @ObservationIgnored private var fixtureStartedRests: [RestSession] = []
     #endif
 
     var isUsingTestAuthorization: Bool {
@@ -50,8 +51,13 @@ final class ScreenTimeManager {
             if ProcessInfo.processInfo.arguments.contains("--ui-testing-delayed-break") {
                 fixturePendingBreakAt = Date.now.addingTimeInterval(5)
             }
+            if ProcessInfo.processInfo.arguments.contains("--ui-testing-shield-rest") {
+                fixtureStartedRests = [RestSession(startedAt: .now.addingTimeInterval(-3), durationSeconds: restSeconds)]
+                hasPendingBreak = true
+            }
             isResolvingAuthorization = authorizationFixture == .restoringApproved
-            if authorizationFixture == .revokedOnForeground {
+            let startOnForeground = ProcessInfo.processInfo.arguments.contains("--ui-testing-shield-rest-on-foreground")
+            if authorizationFixture == .revokedOnForeground || startOnForeground {
                 foregroundObserver = NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
                     .merge(with: NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification))
                     .sink { [weak self] notification in
@@ -59,8 +65,14 @@ final class ScreenTimeManager {
                         if notification.name == UIApplication.didEnterBackgroundNotification {
                             fixtureHasBackgrounded = true
                         } else if fixtureHasBackgrounded {
-                            isAuthorized = false
-                            refresh()
+                            fixtureHasBackgrounded = false
+                            if startOnForeground {
+                                fixtureStartedRests = [RestSession(startedAt: .now, durationSeconds: restSeconds)]
+                                hasPendingBreak = true
+                            } else {
+                                isAuthorized = false
+                                refresh()
+                            }
                         }
                     }
             }
@@ -97,7 +109,6 @@ final class ScreenTimeManager {
         if let authorizationFixture {
             isAuthorized = authorizationFixture != .denied
             isResolvingAuthorization = false
-            if authorizationFixture == .restoringApproved { isEnabled = true }
             errorMessage = isAuthorized ? nil : "Screen Time access was denied. Allow access to continue."
             refresh()
             return
@@ -159,38 +170,6 @@ final class ScreenTimeManager {
         }
     }
 
-    func setEnabled(_ enabled: Bool, usageMinutes: Int) throws {
-        refreshAuthorization()
-        if enabled && (isResolvingAuthorization || !isAuthorized) {
-            let error = ScreenTimeFailure.notAuthorized
-            report(error)
-            throw error
-        }
-        if isUsingTestAuthorization {
-            isEnabled = enabled
-            hasPendingBreak = false
-            errorMessage = nil
-            return
-        }
-        do {
-            if enabled {
-                var config = try ScreenTimeSupport.load()
-                config.selection = selection
-                config.enabled = true
-                try ScreenTimeSupport.save(config)
-                try ScreenTimeSupport.rearm(reason: "Automatic pauses enabled", useMinutes: usageMinutes)
-            } else {
-                try ScreenTimeSupport.stop()
-                try ScreenTimeSupport.clearError()
-            }
-            refresh()
-        } catch {
-            refresh()
-            report(error)
-            throw error
-        }
-    }
-
     func beginBreak(deadline: Date) throws {
         if isUsingTestAuthorization { return }
         do {
@@ -206,13 +185,13 @@ final class ScreenTimeManager {
         }
     }
 
-    func resetCycle(usageMinutes: Int, reason: String, onlyIfRestExpired: Bool = false) throws {
+    func resetCycle(reason: String, onlyIfRestExpired: Bool = false) throws {
         if isUsingTestAuthorization {
             hasPendingBreak = false
             return
         }
         do {
-            try ScreenTimeSupport.rearm(reason: reason, useMinutes: usageMinutes, onlyIfRestExpired: onlyIfRestExpired)
+            try ScreenTimeSupport.rearm(reason: reason, onlyIfRestExpired: onlyIfRestExpired)
             refresh()
         } catch {
             refresh()
@@ -221,21 +200,17 @@ final class ScreenTimeManager {
         }
     }
 
-    func release() {
+    func stopAfterFailure() {
+        isEnabled = false
+        hasPendingBreak = false
         if isUsingTestAuthorization {
-            isEnabled = false
-            hasPendingBreak = false
             errorMessage = nil
             return
         }
         do {
             try ScreenTimeSupport.stop()
-            try ScreenTimeSupport.clearError()
-            refresh()
         } catch {
             ScreenTimeSupport.clearShield()
-            isEnabled = false
-            hasPendingBreak = false
             report(error)
         }
     }
@@ -255,10 +230,9 @@ final class ScreenTimeManager {
 
     func refresh() {
         if isUsingTestAuthorization {
-            if !isAuthorized {
-                isEnabled = false
-                hasPendingBreak = false
-            }
+            guard !isResolvingAuthorization else { return }
+            isEnabled = isAuthorized
+            if !isAuthorized { hasPendingBreak = false }
             return
         }
         refreshAuthorization()
@@ -269,7 +243,13 @@ final class ScreenTimeManager {
                 try ScreenTimeSupport.stop()
                 config = try ScreenTimeSupport.load()
             }
-            try ScreenTimeSupport.upgradeMonitoringIfNeeded()
+            if isAuthorized && !config.enabled {
+                config.enabled = true
+                try ScreenTimeSupport.save(config)
+                try ScreenTimeSupport.rearm(reason: "Required break reminders started", preservingPendingBreak: true)
+            } else {
+                try ScreenTimeSupport.upgradeMonitoringIfNeeded()
+            }
             config = try ScreenTimeSupport.load()
             if let deadline = config.breakDeadline, deadline <= .now {
                 try ScreenTimeSupport.rearm(reason: "Rest deadline elapsed on app refresh")
@@ -306,6 +286,31 @@ final class ScreenTimeManager {
             hasPendingBreak = config.enabled && config.pendingBreak
             errorMessage = try ScreenTimeSupport.lastError()
         } catch { report(error) }
+    }
+
+    func pendingStartedRests() throws -> [RestSession] {
+        #if DEBUG
+        if isUsingTestAuthorization { return fixtureStartedRests }
+        #endif
+        do { return try ScreenTimeSupport.pendingStartedRests() }
+        catch {
+            report(error)
+            throw error
+        }
+    }
+
+    func acknowledgeStartedRests(ids: Set<UUID>) throws {
+        #if DEBUG
+        if isUsingTestAuthorization {
+            fixtureStartedRests.removeAll { ids.contains($0.id) }
+            return
+        }
+        #endif
+        do { try ScreenTimeSupport.acknowledgeStartedRests(ids: ids) }
+        catch {
+            report(error)
+            throw error
+        }
     }
 
     func pendingSkippedBreaks() throws -> [ShieldSkipEvent] {

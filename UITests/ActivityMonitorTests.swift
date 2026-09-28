@@ -22,6 +22,40 @@ final class ActivityMonitorTests: XCTestCase {
 
     override func tearDownWithError() throws {
         try ScreenTimeSupport.save(savedConfig)
+        try ScreenTimeSupport.acknowledgeStartedRests(ids: Set(ScreenTimeSupport.pendingStartedRests().map(\.id)))
+    }
+
+    func testShieldTapStartsRestOnceAndPreservesHandoffAfterRearm() throws {
+        config.pendingBreak = true
+        config.restSeconds = 10
+        try ScreenTimeSupport.save(config)
+        let tappedAt = Date.now
+        try ScreenTimeSupport.startBreakFromShield(at: tappedAt)
+        try ScreenTimeSupport.startBreakFromShield(at: tappedAt.addingTimeInterval(2))
+        let starts = try ScreenTimeSupport.pendingStartedRests()
+        XCTAssertEqual(starts.count, 1)
+        let session = try XCTUnwrap(starts.first)
+        XCTAssertEqual(session.startedAt, tappedAt)
+        XCTAssertEqual(session.durationSeconds, 10)
+        XCTAssertEqual(try ScreenTimeSupport.load().breakDeadline, session.deadline)
+
+        config.activityName = "lookfar.cycle.next"
+        config.pendingBreak = false
+        config.breakDeadline = nil
+        try ScreenTimeSupport.save(config)
+        XCTAssertEqual(try ScreenTimeSupport.pendingStartedRests(), starts)
+        try ScreenTimeSupport.acknowledgeStartedRests(ids: [session.id])
+        XCTAssertTrue(try ScreenTimeSupport.pendingStartedRests().isEmpty)
+    }
+
+    func testStaleOrDisabledShieldCannotStartRest() throws {
+        try ScreenTimeSupport.startBreakFromShield()
+        XCTAssertTrue(try ScreenTimeSupport.pendingStartedRests().isEmpty)
+        config.pendingBreak = true
+        config.enabled = false
+        try ScreenTimeSupport.save(config)
+        try ScreenTimeSupport.startBreakFromShield()
+        XCTAssertTrue(try ScreenTimeSupport.pendingStartedRests().isEmpty)
     }
 
     func testFreshExtensionProcessesThresholdWithoutRequestingAuthorization() throws {
@@ -94,6 +128,23 @@ final class ActivityMonitorTests: XCTestCase {
         XCTAssertTrue(RestLogic.completeIfDue(&state, at: session.deadline))
         var tracker = UsageGapTracker()
         XCTAssertEqual(shared.recordUsageCheckpoint(minutes: shared.useMinutes, at: session.deadline, tracker: &tracker), .restart)
+    }
+
+    @MainActor func testCycleResetUsesSavedTimingInsteadOfManagersCachedTiming() throws {
+        let manager = ScreenTimeManager()
+        XCTAssertEqual(manager.usageMinutes, 5)
+        config.enabled = false // Exercise persistence without real Simulator monitoring.
+        config.useMinutes = 30
+        config.restSeconds = 10
+        try ScreenTimeSupport.save(config)
+
+        try manager.resetCycle(reason: "Rest completed after preferences changed")
+
+        let saved = try ScreenTimeSupport.load()
+        XCTAssertEqual(saved.useMinutes, 30)
+        XCTAssertEqual(saved.restSeconds, 10)
+        XCTAssertEqual(manager.usageMinutes, 30)
+        XCTAssertEqual(manager.restSeconds, 10)
     }
 }
 #endif

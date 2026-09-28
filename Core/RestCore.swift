@@ -49,6 +49,27 @@ public struct RestState: Codable {
 }
 
 public enum RestLogic {
+    /// Import rests deliberately started on a shield without restarting their clocks.
+    @discardableResult
+    public static func restoreStartedRests(_ state: inout RestState, sessions: [RestSession], at date: Date) -> Bool {
+        var restored = false
+        for session in sessions.sorted(by: { $0.startedAt < $1.startedAt }) {
+            guard !state.records.contains(where: {
+                $0.id == session.id || ($0.kind != .guided && $0.date >= session.startedAt && $0.date < session.deadline)
+            }) else { continue }
+            if session.deadline <= date {
+                state.records.append(RestRecord(id: session.id, date: session.deadline, durationSeconds: session.durationSeconds, kind: .guided))
+                if state.activeSession?.id == session.id { state.activeSession = nil }
+                restored = true
+            } else {
+                if let current = state.activeSession, current.startedAt > session.startedAt { continue }
+                state.activeSession = session
+                restored = true
+            }
+        }
+        return restored
+    }
+
     public static func start(_ state: inout RestState, at date: Date, durationOverride: Int? = nil) {
         guard state.activeSession == nil else { return }
         let duration = durationOverride ?? RestSchedule.restSeconds
