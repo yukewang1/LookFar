@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TodayView: View {
-    @Bindable var store: AppStore
+    let store: AppStore
     let openSettings: () -> Void
     let openProgress: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

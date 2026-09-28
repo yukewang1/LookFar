@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct OnboardingView: View {
-    @Bindable var store: AppStore
+    let store: AppStore
     @State private var stage = Stage.introduction
     @State private var startedIntro = false
 
