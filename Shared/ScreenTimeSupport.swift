@@ -80,14 +80,12 @@ struct MonitoringConfig: Codable {
 }
 
 enum ScreenTimeFailure: LocalizedError {
-    case simulator, notAuthorized, invalidRhythm, invalidInterval, sharedStorageUnavailable, invalidSkipEvent
+    case simulator, invalidRhythm, invalidInterval, sharedStorageUnavailable, invalidSkipEvent, invalidRestEvent
 
     var errorDescription: String? {
         switch self {
         case .simulator:
             return "Screen Time access requires a physical iPhone."
-        case .notAuthorized:
-            return "Allow Screen Time access before enabling automatic breaks."
         case .invalidRhythm:
             return "Choose 5–120 minutes of screen use and 5–120 seconds of rest."
         case .invalidInterval:
@@ -96,6 +94,8 @@ enum ScreenTimeFailure: LocalizedError {
             return "Look Far’s shared storage is unavailable. Check the App Group signing entitlement."
         case .invalidSkipEvent:
             return "A saved shield skip could not be read. Your existing history has not been changed."
+        case .invalidRestEvent:
+            return "A rest started from a reminder could not be read. Your existing history has not been changed."
         }
     }
 }
@@ -110,6 +110,7 @@ enum ScreenTimeSupport {
     private static let checkpointKey = "lookfar.usage-checkpoint"
     private static let errorKey = "lookfar.monitoring-error"
     private static let skipsPrefix = "lookfar.shield-skip."
+    private static let startsPrefix = "lookfar.shield-rest."
     private static let logger = Logger(subsystem: "dev.local.lookfar", category: "ScreenTime")
 
     // Equal start/end times resolve to tomorrow's interval on current iOS releases.
@@ -348,5 +349,35 @@ enum ScreenTimeSupport {
     static func acknowledgeSkippedBreaks(ids: Set<UUID>) throws {
         let defaults = try defaults()
         for id in ids { defaults.removeObject(forKey: skipsPrefix + id.uuidString) }
+    }
+
+    static func startBreakFromShield(at date: Date = .now) throws {
+        var config = try load()
+        guard config.enabled, config.pendingBreak, config.breakDeadline == nil else { return }
+        let session = RestSession(startedAt: date, durationSeconds: config.restSeconds)
+        // Keep the handoff until the app saves it, even if a callback rearms monitoring first.
+        try defaults().set(JSONEncoder().encode(session), forKey: startsPrefix + session.id.uuidString)
+        config.breakDeadline = session.deadline
+        try save(config)
+        MonitoringDiagnostics.record("break.started-from-shield", "deadline=\(session.deadline.ISO8601Format())")
+    }
+
+    static func pendingStartedRests() throws -> [RestSession] {
+        let defaults = try defaults()
+        var sessions: [RestSession] = []
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(startsPrefix) {
+            guard let data = defaults.data(forKey: key) else { throw ScreenTimeFailure.invalidRestEvent }
+            let session = try JSONDecoder().decode(RestSession.self, from: data)
+            guard key == startsPrefix + session.id.uuidString, session.durationSeconds > 0 else {
+                throw ScreenTimeFailure.invalidRestEvent
+            }
+            sessions.append(session)
+        }
+        return sessions.sorted { $0.startedAt < $1.startedAt }
+    }
+
+    static func acknowledgeStartedRests(ids: Set<UUID>) throws {
+        let defaults = try defaults()
+        for id in ids { defaults.removeObject(forKey: startsPrefix + id.uuidString) }
     }
 }

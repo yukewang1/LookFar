@@ -31,6 +31,7 @@ final class LookFarShieldAction: ShieldActionDelegate {
                 try ScreenTimeSupport.rearm(reason: "Rest deadline elapsed at shield action")
                 completionHandler(.none)
             } else {
+                try ScreenTimeSupport.startBreakFromShield()
                 completionHandler(.openParentalControlsApp)
             }
         } catch {

@@ -68,7 +68,13 @@ struct RootView: View {
         .onChange(of: store.monitoring.isAuthorized) { _, authorized in
             if !authorized { showSettings = false }
         }
-        .fullScreenCover(isPresented: $store.isBreakPresented, onDismiss: { store.breakCompleted = false }) {
+        .onChange(of: store.isBreakPresented) { _, presented in
+            if presented { showSettings = false }
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { store.isBreakPresented && !showSettings },
+            set: { store.isBreakPresented = $0 }
+        ), onDismiss: { store.breakCompleted = false }) {
             BreakView(store: store)
         }
         .sheet(isPresented: $store.showPause) { PauseView(store: store) }

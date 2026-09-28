@@ -22,6 +22,40 @@ final class ActivityMonitorTests: XCTestCase {
 
     override func tearDownWithError() throws {
         try ScreenTimeSupport.save(savedConfig)
+        try ScreenTimeSupport.acknowledgeStartedRests(ids: Set(ScreenTimeSupport.pendingStartedRests().map(\.id)))
+    }
+
+    func testShieldTapStartsRestOnceAndPreservesHandoffAfterRearm() throws {
+        config.pendingBreak = true
+        config.restSeconds = 10
+        try ScreenTimeSupport.save(config)
+        let tappedAt = Date.now
+        try ScreenTimeSupport.startBreakFromShield(at: tappedAt)
+        try ScreenTimeSupport.startBreakFromShield(at: tappedAt.addingTimeInterval(2))
+        let starts = try ScreenTimeSupport.pendingStartedRests()
+        XCTAssertEqual(starts.count, 1)
+        let session = try XCTUnwrap(starts.first)
+        XCTAssertEqual(session.startedAt, tappedAt)
+        XCTAssertEqual(session.durationSeconds, 10)
+        XCTAssertEqual(try ScreenTimeSupport.load().breakDeadline, session.deadline)
+
+        config.activityName = "lookfar.cycle.next"
+        config.pendingBreak = false
+        config.breakDeadline = nil
+        try ScreenTimeSupport.save(config)
+        XCTAssertEqual(try ScreenTimeSupport.pendingStartedRests(), starts)
+        try ScreenTimeSupport.acknowledgeStartedRests(ids: [session.id])
+        XCTAssertTrue(try ScreenTimeSupport.pendingStartedRests().isEmpty)
+    }
+
+    func testStaleOrDisabledShieldCannotStartRest() throws {
+        try ScreenTimeSupport.startBreakFromShield()
+        XCTAssertTrue(try ScreenTimeSupport.pendingStartedRests().isEmpty)
+        config.pendingBreak = true
+        config.enabled = false
+        try ScreenTimeSupport.save(config)
+        try ScreenTimeSupport.startBreakFromShield()
+        XCTAssertTrue(try ScreenTimeSupport.pendingStartedRests().isEmpty)
     }
 
     func testFreshExtensionProcessesThresholdWithoutRequestingAuthorization() throws {

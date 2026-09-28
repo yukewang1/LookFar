@@ -3,6 +3,64 @@ import XCTest
 final class LookFarUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    @MainActor func testShieldStartOpensRunningCountdownWithoutSecondPrompt() throws {
+        let app = launch(skipOnboarding: true, fullRest: true, extraArguments: ["--ui-testing-shield-rest"])
+        XCTAssertTrue(app.staticTexts["restCountdown"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["pauseStart"].exists)
+        XCTAssertFalse(app.staticTexts["restCountdown"].label.contains("20s"))
+        attach(app, "shield-rest-countdown")
+        XCTAssertTrue(app.buttons["finishRest"].waitForExistence(timeout: 20))
+        tap(app.buttons["finishRest"], in: app)
+        XCTAssertTrue(app.staticTexts["treeCount"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["treeCount"].label.contains("1 tree"))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertFalse(app.staticTexts["restCountdown"].exists)
+        XCTAssertTrue(app.staticTexts["treeCount"].label.contains("1 tree"))
+    }
+
+    @MainActor func testShieldStartClosesSettingsAndOpensCountdownOnReturn() throws {
+        let app = launch(skipOnboarding: true, fullRest: true, extraArguments: ["--ui-testing-shield-rest-on-foreground"])
+        tap(app.buttons["Settings"], in: app)
+        XCTAssertTrue(app.buttons["customizeApps"].waitForExistence(timeout: 5))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.staticTexts["restCountdown"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["pauseStart"].exists)
+        XCTAssertFalse(app.buttons["customizeApps"].exists)
+        tap(app.buttons["skipRest"], in: app)
+        XCTAssertTrue(app.staticTexts["treeCount"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["treeCount"].label.contains("0 trees"))
+    }
+
+    @MainActor func testSimplifiedSettingsAndHistoryDeletion() throws {
+        let app = launch(skipOnboarding: true)
+        tap(app.buttons["quickRest"], in: app)
+        XCTAssertTrue(app.buttons["finishRest"].waitForExistence(timeout: 8))
+        tap(app.buttons["finishRest"], in: app)
+        tap(app.buttons["Settings"], in: app)
+        XCTAssertTrue(app.buttons["customizeApps"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["End sound"].exists)
+        XCTAssertFalse(app.switches["Automatic app pauses"].exists)
+        XCTAssertFalse(app.buttons["Enable end notifications"].exists)
+        XCTAssertFalse(app.buttons["Release apps & stop monitoring"].exists)
+        attach(app, "simplified-settings")
+        tap(app.buttons["Delete rest history"], in: app)
+        XCTAssertFalse(app.buttons["Restart introduction"].exists)
+        XCTAssertTrue(app.buttons["Delete history"].waitForExistence(timeout: 5))
+        tap(app.otherElements["PopoverDismissRegion"], in: app)
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.staticTexts["treeCount"].label.contains("1 tree"))
+        tap(app.buttons["Settings"], in: app)
+        tap(app.buttons["Delete rest history"], in: app)
+        tap(app.buttons["Delete history"], in: app)
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.staticTexts["treeCount"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["treeCount"].label.contains("0 trees"))
+        tap(app.buttons["Settings"], in: app)
+        XCTAssertTrue(app.staticTexts["rhythmSummary"].label.contains("20 min / 20 sec"))
+    }
+
     @MainActor func testBreakArrivingWhileAppRemainsOpenIsPresented() throws {
         let app = launch(skipOnboarding: true, extraArguments: ["--ui-testing-delayed-break"])
         XCTAssertTrue(app.staticTexts["treeCount"].waitForExistence(timeout: 5))

@@ -119,12 +119,12 @@ struct ScreenTimeAccessView: View {
             defer { isConnecting = false }
             if !store.monitoring.isAuthorized { await store.monitoring.requestAuthorization() }
             guard store.monitoring.isAuthorized else { return }
-            do {
-                try store.monitoring.setEnabled(true, usageMinutes: store.monitoring.usageMinutes)
-                onConnected()
-            } catch {
-                store.errorMessage = error.localizedDescription
+            store.monitoring.refresh()
+            guard store.monitoring.isEnabled else {
+                store.errorMessage = store.monitoring.errorMessage
+                return
             }
+            onConnected()
         }
     }
 

@@ -15,7 +15,7 @@ final class LookFarShieldConfiguration: ShieldConfigurationDataSource {
         let subtitle: String
         do {
             let config = try ScreenTimeSupport.load()
-            subtitle = "A little room for your eyes.\n\nYou've had \(config.useMinutes) minutes of screen time. Look into the distance for \(config.restSeconds) seconds. We'll let you know when your rest is done."
+            subtitle = "A little room for your eyes.\n\nYou've had \(config.useMinutes) minutes of screen time. Start a \(config.restSeconds)-second rest and look into the distance."
         } catch {
             ScreenTimeSupport.recordFailure(error)
             subtitle = "A little room for your eyes.\n\nTake a moment to look into the distance. Open Look Far to start your rest."
@@ -26,7 +26,7 @@ final class LookFarShieldConfiguration: ShieldConfigurationDataSource {
             icon: UIImage(systemName: "leaf"),
             title: .init(text: "Look Far", color: ink),
             subtitle: .init(text: subtitle, color: ink),
-            primaryButtonLabel: .init(text: "Take an eye break", color: paper),
+            primaryButtonLabel: .init(text: "Start rest", color: paper),
             primaryButtonBackgroundColor: ink,
             secondaryButtonLabel: .init(text: "Skip this break · release apps", color: ink)
         )

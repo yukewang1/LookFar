@@ -13,7 +13,6 @@ final class AppStore {
     var errorMessage: String?
     var feedbackMessage: String?
     var soundEnabled = true
-    var notificationPermission = false
     let monitoring = ScreenTimeManager()
 
     @ObservationIgnored private let fileURL: URL
@@ -29,6 +28,12 @@ final class AppStore {
                 storageBlocked = true
                 errorMessage = "Your saved history could not be opened. It has not been overwritten. \(error.localizedDescription)"
             }
+        }
+        // Remove requests left by builds that offered end notifications.
+        if !isUITesting {
+            let notifications = UNUserNotificationCenter.current()
+            notifications.removePendingNotificationRequests(withIdentifiers: ["rest-end"])
+            notifications.removeDeliveredNotifications(withIdentifiers: ["rest-end"])
         }
         soundEnabled = UserDefaults.standard.object(forKey: "soundEnabled") as? Bool ?? true
         let arguments = ProcessInfo.processInfo.arguments
@@ -52,11 +57,6 @@ final class AppStore {
         persist()
     }
 
-    func restartOnboarding() {
-        state.onboardingComplete = false
-        persist()
-    }
-
     func startBreak(isOnboardingTrial: Bool = false) {
         monitoring.refreshAuthorization()
         guard !state.onboardingComplete || (!monitoring.isResolvingAuthorization && monitoring.isAuthorized) else { return }
@@ -72,7 +72,6 @@ final class AppStore {
             do { try monitoring.beginBreak(deadline: session.deadline) }
             catch { errorMessage = error.localizedDescription }
         }
-        scheduleEndCue()
     }
 
     func reconcile() {
@@ -81,10 +80,22 @@ final class AppStore {
         if state.onboardingComplete && !monitoring.isAuthorized {
             interruptForScreenTimeDisconnect()
         }
+        reconcileShieldEvents()
+        presentPendingBreak()
+    }
+
+    private func reconcileShieldEvents() {
+        let starts: [RestSession]
         let skips: [ShieldSkipEvent]
-        do { skips = try monitoring.pendingSkippedBreaks() }
-        catch {
+        do {
+            starts = try monitoring.pendingStartedRests()
+            skips = try monitoring.pendingSkippedBreaks()
+        } catch {
             errorMessage = error.localizedDescription
+            tick()
+            return
+        }
+        guard !starts.isEmpty || !skips.isEmpty else {
             tick()
             return
         }
@@ -95,18 +106,22 @@ final class AppStore {
             if let session = state.activeSession, event.date >= session.startedAt, event.date < session.deadline {
                 state.activeSession = nil
                 isBreakPresented = false
-                UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["rest-end"])
+                breakCompleted = false
             }
         }
         tick()
-        presentPendingBreak()
-        if persist() {
-            do { try monitoring.acknowledgeSkippedBreaks(ids: Set(skips.map(\.id))) }
-            catch { errorMessage = error.localizedDescription }
+        if monitoring.isAuthorized,
+           RestLogic.restoreStartedRests(&state, sessions: starts, at: .now) {
+            feedbackMessage = nil
+            showPause = false
+            breakCompleted = state.activeSession == nil
+            isBreakPresented = true
         }
-        Task {
-            let settings = await UNUserNotificationCenter.current().notificationSettings()
-            notificationPermission = settings.authorizationStatus == .authorized
+        if persist() {
+            do {
+                try monitoring.acknowledgeStartedRests(ids: Set(starts.map(\.id)))
+                try monitoring.acknowledgeSkippedBreaks(ids: Set(skips.map(\.id)))
+            } catch { errorMessage = error.localizedDescription }
         }
     }
 
@@ -118,6 +133,7 @@ final class AppStore {
             return
         }
         monitoring.refreshPendingBreak()
+        reconcileShieldEvents()
         presentPendingBreak()
     }
 
@@ -143,7 +159,6 @@ final class AppStore {
         isBreakPresented = false
         breakCompleted = false
         showPause = false
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["rest-end"])
         if hadSession { persist() }
     }
 
@@ -160,7 +175,6 @@ final class AppStore {
         persist()
         breakCompleted = true
         resetMonitoring(reason: "Guided rest completed", onlyIfRestExpired: true)
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["rest-end"])
         if UIApplication.shared.applicationState == .active {
             if soundEnabled { AudioServicesPlaySystemSound(1007) }
             UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -173,7 +187,6 @@ final class AppStore {
         isBreakPresented = false
         showPause = false
         breakCompleted = false
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["rest-end"])
         resetMonitoring(reason: "Break skipped in app")
         feedbackMessage = "Skipped. Your next cycle starts fresh."
     }
@@ -184,18 +197,12 @@ final class AppStore {
         isBreakPresented = false
         showPause = false
         breakCompleted = false
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["rest-end"])
         resetMonitoring(reason: "Own break confirmed")
         feedbackMessage = "A fresh start. Your own break was noted separately."
     }
 
     func dismissCompletedBreak() {
         isBreakPresented = false
-    }
-
-    func requestNotifications() async {
-        do { notificationPermission = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) }
-        catch { errorMessage = error.localizedDescription }
     }
 
     func setSound(_ enabled: Bool) {
@@ -213,7 +220,7 @@ final class AppStore {
         guard monitoring.isEnabled else { return }
         do { try monitoring.resetCycle(usageMinutes: monitoring.usageMinutes, reason: reason, onlyIfRestExpired: onlyIfRestExpired) }
         catch {
-            monitoring.release()
+            monitoring.stopAfterFailure()
             errorMessage = "Monitoring paused and apps released because a new cycle could not start. \(error.localizedDescription)"
         }
     }
@@ -231,16 +238,4 @@ final class AppStore {
         }
     }
 
-    private func scheduleEndCue() {
-        guard notificationPermission, let session = state.activeSession else { return }
-        let content = UNMutableNotificationContent()
-        content.title = "Your moment of rest is complete"
-        content.body = "Return to \(Brand.name) whenever you're ready."
-        if soundEnabled { content.sound = .default }
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, session.deadline.timeIntervalSinceNow), repeats: false)
-        Task {
-            do { try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "rest-end", content: content, trigger: trigger)) }
-            catch { errorMessage = "The end notification could not be scheduled: \(error.localizedDescription)" }
-        }
-    }
 }

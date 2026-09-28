@@ -100,7 +100,7 @@ for name, identifier in target_ids.items():
     elif report:
         sources = [refs[path] for path in ("Extensions/ScreenTimeReport.swift", "Shared/ScreenTimeReportContent.swift", "App/Theme.swift")]
     else:
-        sources = [refs[path] for path in ("Shared/ScreenTimeSupport.swift", "Shared/MonitoringDiagnostics.swift", "Core/UsageGapTracker.swift", "Core/DiagnosticLog.swift", "Extensions/" + name + ".swift")]
+        sources = [refs[path] for path in ("Shared/ScreenTimeSupport.swift", "Shared/MonitoringDiagnostics.swift", "Core/UsageGapTracker.swift", "Core/DiagnosticLog.swift", "Core/RestCore.swift", "Extensions/" + name + ".swift")]
     source_phase = add(name + "sources", "PBXSourcesBuildPhase", buildActionMask=2147483647,
                        files=[buildfile(name, ref) for ref in sources], runOnlyForDeploymentPostprocessing=0)
     resources = [assets, privacy] if main else [] if test else [privacy]
